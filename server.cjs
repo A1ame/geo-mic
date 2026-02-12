@@ -1,11 +1,11 @@
 const { Server } = require("socket.io");
 
-// Railway сам подставит нужный порт в переменную PORT
+// Railway автоматически передает PORT. Если нет — используем 3001
 const PORT = process.env.PORT || 3001;
 
 const io = new Server({
   cors: {
-    origin: "*", // Разрешаем доступ со всех доменов (включая Vercel)
+    origin: "*", // Разрешаем подключения со всех адресов (Vercel)
     methods: ["GET", "POST"]
   }
 });
@@ -13,20 +13,23 @@ const io = new Server({
 let currentZone = null;
 
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
+  console.log("Новое подключение:", socket.id);
 
+  // Если зона уже создана админом, сразу отправляем её новичку
   if (currentZone) {
     socket.emit("zone-updated", currentZone);
   }
 
+  // Обновление зоны (от админа)
   socket.on("set-zone", (zone) => {
     currentZone = zone;
     io.emit("zone-updated", zone);
+    console.log("Зона обновлена:", zone);
   });
 
-  // Участник нажимает кнопку "Поднять руку"
+  // Участник поднял руку
   socket.on("raise-hand", (data) => {
-    // Отправляем админу socket.id и peerId участника
+    // Рассылаем всем (админ поймает это событие)
     io.emit("new-hand-raised", { 
       id: socket.id, 
       name: data.name, 
@@ -34,17 +37,28 @@ io.on("connection", (socket) => {
     });
   });
 
-  // Админ нажимает "Дать микрофон"
+  // Админ дает микрофон конкретному PeerID
   socket.on("give-mic", (data) => {
-    // data должна содержать { targetPeerId, adminPeerId }
+    // data содержит { targetPeerId, adminPeerId }
     io.emit("mic-granted", data); 
   });
 
+  // Обновление координат для карты админа
+  socket.on("update-coords", (data) => {
+    io.emit("participant-moved", {
+      id: socket.id,
+      lat: data.lat,
+      lng: data.lng,
+      name: data.name
+    });
+  });
+
   socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
+    console.log("Пользователь отключился:", socket.id);
     io.emit("user-disconnected", socket.id);
   });
 });
 
-io.listen(PORT);
-console.log(`Signal server running on port ${PORT}`);
+// Запуск на 0.0.0.0 обязателен для Railway, чтобы принимать внешний трафик
+io.listen(PORT, "0.0.0.0");
+console.log(`Сигнальный сервер запущен на порту ${PORT}`);

@@ -7,9 +7,13 @@ import AdminView from './components/AdminView';
 import ParticipantView from './components/ParticipantView';
 import RoleSelection from './components/RoleSelection';
 
-// ВАЖНО: Вставь сюда ссылку, которую выдаст Railway после нажатия "Сгенерировать домен"
-const SERVER_URL = 'https://твоя-ссылка-из-railway.up.railway.app';
-const socket: Socket = io(SERVER_URL);
+// Твой реальный адрес сервера на Railway
+const SERVER_URL = 'https://geo-mic-production-2da6.up.railway.app';
+
+// Инициализируем сокет с принудительным использованием WebSocket для стабильности
+const socket: Socket = io(SERVER_URL, {
+  transports: ['websocket']
+});
 
 const App: React.FC = () => {
   const [role, setRole] = useState<'admin' | 'user' | null>(null);
@@ -18,11 +22,16 @@ const App: React.FC = () => {
   const [zone, setZone] = useState<any>(null);
   const [myCoords, setMyCoords] = useState<[number, number] | null>(null);
   const [isInside, setIsInside] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
 
   const peerRef = useRef<Peer | null>(null);
 
   useEffect(() => {
-    // Настройка PeerJS для работы в облаке (HTTPS)
+    // Проверка статуса подключения сокета
+    socket.on('connect', () => setIsConnected(true));
+    socket.on('disconnect', () => setIsConnected(false));
+
+    // Настройка PeerJS для работы через HTTPS (порт 443)
     const newPeer = new Peer({
       host: '/',
       secure: true,
@@ -36,11 +45,12 @@ const App: React.FC = () => {
 
     peerRef.current = newPeer;
 
+    // Слежение за GPS
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
         setMyCoords([latitude, longitude]);
-        if (userName) {
+        if (userName && socket.connected) {
           socket.emit('update-coords', { lat: latitude, lng: longitude, name: userName });
         }
       },
@@ -55,10 +65,13 @@ const App: React.FC = () => {
     return () => {
       navigator.geolocation.clearWatch(watchId);
       socket.off('zone-updated');
+      socket.off('connect');
+      socket.off('disconnect');
       newPeer.destroy();
     };
   }, [userName]);
 
+  // Проверка вхождения в геозону
   useEffect(() => {
     if (myCoords && zone && zone.center) {
       const userPoint = turf.point([myCoords[1], myCoords[0]]); 
@@ -94,9 +107,10 @@ const App: React.FC = () => {
         />
       )}
       
-      <div className="fixed bottom-2 right-2 text-[10px] text-slate-500 bg-black/20 p-1 rounded">
+      {/* Индикатор статуса в углу */}
+      <div className="fixed bottom-2 right-2 text-[10px] text-slate-500 bg-black/40 p-2 rounded backdrop-blur-sm">
         GPS: {myCoords ? `${myCoords[0].toFixed(4)}, ${myCoords[1].toFixed(4)}` : 'Поиск...'} | 
-        ID: {peerId.slice(0,5)} | Статус: {socket.connected ? '🌐' : '❌'}
+        ID: {peerId.slice(0,5)} | Статус: {isConnected ? '🌐 Online' : '❌ Offline'}
       </div>
     </div>
   );
