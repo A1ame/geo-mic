@@ -10,6 +10,9 @@
     "preview": "vite preview",
     "start": "node server.cjs"
   },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "@geoman-io/leaflet-geoman-free": "^2.19.2",
     "@turf/turf": "^7.3.4",
