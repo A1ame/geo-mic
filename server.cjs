@@ -1,11 +1,12 @@
 const { Server } = require("socket.io");
 
-// Railway автоматически передает PORT. Если нет — используем 3001
+// Railway передает порт через переменную PORT
 const PORT = process.env.PORT || 3001;
 
+// Создаем сервер БЕЗ указания порта в конструкторе
 const io = new Server({
   cors: {
-    origin: "*", // Разрешаем подключения со всех адресов (Vercel)
+    origin: "*", 
     methods: ["GET", "POST"]
   }
 });
@@ -15,21 +16,17 @@ let currentZone = null;
 io.on("connection", (socket) => {
   console.log("Новое подключение:", socket.id);
 
-  // Если зона уже создана админом, сразу отправляем её новичку
   if (currentZone) {
     socket.emit("zone-updated", currentZone);
   }
 
-  // Обновление зоны (от админа)
   socket.on("set-zone", (zone) => {
     currentZone = zone;
     io.emit("zone-updated", zone);
     console.log("Зона обновлена:", zone);
   });
 
-  // Участник поднял руку
   socket.on("raise-hand", (data) => {
-    // Рассылаем всем (админ поймает это событие)
     io.emit("new-hand-raised", { 
       id: socket.id, 
       name: data.name, 
@@ -37,13 +34,10 @@ io.on("connection", (socket) => {
     });
   });
 
-  // Админ дает микрофон конкретному PeerID
   socket.on("give-mic", (data) => {
-    // data содержит { targetPeerId, adminPeerId }
     io.emit("mic-granted", data); 
   });
 
-  // Обновление координат для карты админа
   socket.on("update-coords", (data) => {
     io.emit("participant-moved", {
       id: socket.id,
@@ -59,6 +53,8 @@ io.on("connection", (socket) => {
   });
 });
 
-// Запуск на 0.0.0.0 обязателен для Railway, чтобы принимать внешний трафик
-io.listen(PORT, "0.0.0.0");
-console.log(`Сигнальный сервер запущен на порту ${PORT}`);
+// ПРАВИЛЬНЫЙ запуск для Socket.io на Railway
+// Сначала вызываем listen(PORT), а хост 0.0.0.0 Railway подхватит сам
+io.listen(parseInt(PORT)); 
+
+console.log(`Сигнальный сервер успешно запущен на порту ${PORT}`);
