@@ -1,32 +1,50 @@
 const { Server } = require("socket.io");
-const io = new Server(3001, { cors: { origin: "*" } });
+
+// Railway сам подставит нужный порт в переменную PORT
+const PORT = process.env.PORT || 3001;
+
+const io = new Server({
+  cors: {
+    origin: "*", // Разрешаем доступ со всех доменов (включая Vercel)
+    methods: ["GET", "POST"]
+  }
+});
 
 let currentZone = null;
-let participants = [];
 
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
-  // Отправляем текущую зону новому пользователю
-  if (currentZone) socket.emit("zone-updated", currentZone);
+  if (currentZone) {
+    socket.emit("zone-updated", currentZone);
+  }
 
   socket.on("set-zone", (zone) => {
     currentZone = zone;
-    io.emit("zone-updated", zone); // Рассылаем зону всем
+    io.emit("zone-updated", zone);
   });
 
+  // Участник нажимает кнопку "Поднять руку"
   socket.on("raise-hand", (data) => {
-    io.emit("new-hand-raised", { id: socket.id, name: data.name });
+    // Отправляем админу socket.id и peerId участника
+    io.emit("new-hand-raised", { 
+      id: socket.id, 
+      name: data.name, 
+      peerId: data.peerId 
+    });
   });
 
-  socket.on("give-mic", (peerId) => {
-    io.emit("mic-granted", peerId); // Сообщаем участнику, что он в эфире
+  // Админ нажимает "Дать микрофон"
+  socket.on("give-mic", (data) => {
+    // data должна содержать { targetPeerId, adminPeerId }
+    io.emit("mic-granted", data); 
   });
 
   socket.on("disconnect", () => {
-    participants = participants.filter(p => p.id !== socket.id);
+    console.log("User disconnected:", socket.id);
     io.emit("user-disconnected", socket.id);
   });
 });
 
-console.log("Signal server running on port 3001");
+io.listen(PORT);
+console.log(`Signal server running on port ${PORT}`);
