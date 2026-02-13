@@ -5,8 +5,9 @@ const { ExpressPeerServer } = require("peer");
 const PORT = process.env.PORT || 3000;
 const FRONTEND_URL = "https://geo-mic.vercel.app";
 
+// Создаем основной сервер
 const httpServer = http.createServer((req, res) => {
-  // Принудительные заголовки для CORS
+  // CORS заголовки для обычных запросов
   res.setHeader("Access-Control-Allow-Origin", FRONTEND_URL);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -18,8 +19,12 @@ const httpServer = http.createServer((req, res) => {
     return;
   }
 
-  res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("GEO-MIC Server is Live");
+  // Отвечаем "Live" только на корень, чтобы не мешать PeerJS
+  if (req.url === "/" || req.url === "") {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("GEO-MIC Backend is running...");
+    return;
+  }
 });
 
 // Настройка Socket.io
@@ -35,7 +40,7 @@ const io = new Server(httpServer, {
 // Настройка PeerServer
 const peerServer = ExpressPeerServer(httpServer, {
   debug: true,
-  path: "/peerjs",
+  path: "/", // Путь внутри /peerjs, который мы укажем в httpServer.on('upgrade')
   proxied: true,
   allow_discovery: true,
   corsOptions: {
@@ -45,17 +50,17 @@ const peerServer = ExpressPeerServer(httpServer, {
   }
 });
 
-// Критически важный блок для Railway: правильный апгрейд протокола
+// Обработка Upgrade для PeerJS
 httpServer.on("upgrade", (request, socket, head) => {
   if (request.url.startsWith("/peerjs")) {
     peerServer.handleUpgrade(request, socket, head);
   }
 });
 
+// Логика Socket.io
 let currentZone = null;
-
 io.on("connection", (socket) => {
-  console.log("Клиент подключен к сокету:", socket.id);
+  console.log("Socket connected:", socket.id);
   if (currentZone) socket.emit("zone-updated", currentZone);
 
   socket.on("set-zone", (zone) => {
@@ -64,7 +69,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("join", (data) => {
-    console.log(`Пользователь ${data.name} (${data.role}) вошел`);
+    console.log(`User ${data.name} joined as ${data.role}`);
   });
 
   socket.on("update-coords", (data) => {
@@ -77,5 +82,5 @@ io.on("connection", (socket) => {
 });
 
 httpServer.listen(PORT, "0.0.0.0", () => {
-  console.log(`Сервер запущен на порту ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });

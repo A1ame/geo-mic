@@ -20,40 +20,44 @@ const App: React.FC = () => {
   const [peerId, setPeerId] = useState<string>('');
   const [zone, setZone] = useState<any>(null);
   const [myCoords, setMyCoords] = useState<[number, number] | null>(null);
-  const [isInside, setIsInside] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
 
   const peerRef = useRef<Peer | null>(null);
+
+  // Функция создания Peer-соединения
+  const startPeerConnection = () => {
+    if (peerRef.current) return;
+
+    const newId = `id-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const peer = new Peer(newId, {
+      host: 'geo-mic-production-2da6.up.railway.app',
+      port: 443,
+      path: '/peerjs',
+      secure: true,
+      debug: 1
+    });
+
+    peer.on('open', (id) => {
+      console.log('✅ Peer connection established:', id);
+      setPeerId(id);
+    });
+
+    peer.on('error', (err) => {
+      console.error('❌ PeerJS Error:', err.type);
+      if (err.type === 'network' || err.type === 'server-error') {
+        // Рекурсивный перезапуск при обрыве
+        setTimeout(startPeerConnection, 3000);
+      }
+    });
+
+    peerRef.current = peer;
+  };
 
   useEffect(() => {
     socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => setIsConnected(false));
     socket.on('zone-updated', (newZone) => setZone(newZone));
-
-    // Генерируем случайный ID, чтобы избежать конфликтов с текстом ответа сервера
-    const randomId = 'user-' + Math.random().toString(36).substr(2, 9);
-
-    const newPeer = new Peer(randomId, {
-      host: 'geo-mic-production-2da6.up.railway.app',
-      port: 443,
-      path: '/peerjs',
-      secure: true,
-      debug: 3,
-      config: {
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-      }
-    });
-
-    newPeer.on('open', (id) => {
-      console.log('✅ Peer подключен успешно. ID:', id);
-      setPeerId(id);
-    });
-
-    newPeer.on('error', (err) => {
-      console.error('❌ PeerJS Error:', err.type, err);
-    });
-
-    peerRef.current = newPeer;
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => setMyCoords([pos.coords.latitude, pos.coords.longitude]),
@@ -63,58 +67,47 @@ const App: React.FC = () => {
 
     return () => {
       navigator.geolocation.clearWatch(watchId);
-      socket.off('connect');
-      socket.off('disconnect');
       socket.off('zone-updated');
-      newPeer.destroy();
+      if (peerRef.current) peerRef.current.destroy();
     };
   }, []);
 
-  useEffect(() => {
-    if (myCoords && zone && zone.center) {
-      const userPoint = turf.point([myCoords[1], myCoords[0]]); 
-      const centerPoint = turf.point([zone.center.lng, zone.center.lat]);
-      const distance = turf.distance(userPoint, centerPoint, { units: 'meters' });
-      setIsInside(distance <= zone.radius);
-    }
-  }, [myCoords, zone]);
+  const handleJoin = (selectedRole: 'admin' | 'user', name: string) => {
+    setRole(selectedRole);
+    setUserName(name);
+    socket.emit('join', { name, role: selectedRole });
+    
+    // Запускаем Peer только после взаимодействия пользователя
+    startPeerConnection();
+  };
 
   if (!role) {
-    return (
-      <RoleSelection 
-        onSelect={(selectedRole, name) => {
-          setRole(selectedRole);
-          setUserName(name);
-          socket.emit('join', { name, role: selectedRole });
-        }} 
-      />
-    );
+    return <RoleSelection onSelect={handleJoin} />;
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white font-sans">
+    <div className="min-h-screen bg-slate-900 text-white selection:bg-indigo-500/30">
       {role === 'admin' ? (
         <AdminView socket={socket} peer={peerRef.current!} />
       ) : (
         <ParticipantView 
           socket={socket} 
           peer={peerRef.current!} 
-          isInside={isInside} 
           userName={userName}
         />
       )}
       
       {/* Статус-панель */}
       <div className="fixed bottom-4 right-4 flex flex-col gap-2">
-        <div className="px-3 py-2 bg-black/80 backdrop-blur-md rounded-lg border border-white/10 text-[10px] shadow-2xl flex items-center gap-4">
-          <div className="flex items-center gap-1">
-            <span className={myCoords ? "text-green-500" : "text-yellow-500"}>●</span> GPS
+        <div className="flex items-center gap-3 px-3 py-2 bg-black/60 backdrop-blur-md rounded-lg border border-white/10 text-[11px] shadow-2xl">
+          <div className="flex items-center gap-1.5">
+            <span className={peerId ? "text-green-400" : "text-red-400"}>●</span>
+            <span>VOICE</span>
           </div>
-          <div className="flex items-center gap-1">
-            <span className={peerId ? "text-green-500" : "text-red-500"}>●</span> PEER
-          </div>
-          <div className="flex items-center gap-1">
-            <span className={isConnected ? "text-green-500" : "text-red-500"}>●</span> SERVER
+          <div className="w-px h-3 bg-white/10" />
+          <div className="flex items-center gap-1.5">
+            <span className={isConnected ? "text-green-400" : "text-red-400"}>●</span>
+            <span>SERVER</span>
           </div>
         </div>
       </div>
