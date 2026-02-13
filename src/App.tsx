@@ -7,14 +7,11 @@ import AdminView from './components/AdminView';
 import ParticipantView from './components/ParticipantView';
 import RoleSelection from './components/RoleSelection';
 
-// Константы - убедись, что адрес бэкенда верный
 const SERVER_URL = 'https://geo-mic-production-2da6.up.railway.app';
 
-// Инициализация сокета с поддержкой передачи куки/учетных данных
 const socket: Socket = io(SERVER_URL, {
   transports: ['polling', 'websocket'],
-  withCredentials: true,
-  reconnectionAttempts: 10
+  withCredentials: true
 });
 
 const App: React.FC = () => {
@@ -29,59 +26,44 @@ const App: React.FC = () => {
   const peerRef = useRef<Peer | null>(null);
 
   useEffect(() => {
-    // 1. Управление статусом Socket.io
     socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => setIsConnected(false));
     socket.on('zone-updated', (newZone) => setZone(newZone));
 
-    // 2. Инициализация PeerJS
-    // Передаем пустую строку вместо undefined, чтобы библиотека сама запросила ID у сервера
-    const newPeer = new Peer('', {
+    const newPeer = new Peer({
       host: 'geo-mic-production-2da6.up.railway.app',
       port: 443,
       path: '/peerjs',
       secure: true,
-      debug: 3,
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-      }
+      debug: 3
     });
 
     newPeer.on('open', (id) => {
-      console.log('✅ Peer подключен. Ваш ID:', id);
+      console.log('✅ Peer ID получен:', id);
       setPeerId(id);
     });
 
     newPeer.on('error', (err) => {
       console.error('❌ PeerJS Error:', err.type);
-      // Если сервер обрывает соединение, попробуем переподключиться через 5 сек
-      if (err.type === 'server-error') {
-          console.log('Попытка переподключения Peer...');
-      }
     });
 
     peerRef.current = newPeer;
 
-    // 3. Геолокация
     const watchId = navigator.geolocation.watchPosition(
       (pos) => setMyCoords([pos.coords.latitude, pos.coords.longitude]),
       (err) => console.error("GPS Error:", err),
-      { enableHighAccuracy: true, timeout: 15000 }
+      { enableHighAccuracy: true }
     );
 
     return () => {
       navigator.geolocation.clearWatch(watchId);
-      socket.off('zone-updated');
       socket.off('connect');
       socket.off('disconnect');
-      if (peerRef.current) peerRef.current.destroy();
+      socket.off('zone-updated');
+      newPeer.destroy();
     };
   }, []);
 
-  // Расчет вхождения в зону
   useEffect(() => {
     if (myCoords && zone && zone.center) {
       const userPoint = turf.point([myCoords[1], myCoords[0]]); 
@@ -104,7 +86,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white font-sans">
+    <div className="min-h-screen bg-slate-900 text-white">
       {role === 'admin' ? (
         <AdminView socket={socket} peer={peerRef.current!} />
       ) : (
@@ -116,18 +98,15 @@ const App: React.FC = () => {
         />
       )}
       
-      {/* Виджет статуса */}
-      <div className="fixed bottom-4 right-4 flex flex-col gap-2">
-        <div className="px-3 py-2 bg-black/80 backdrop-blur-md rounded-lg border border-white/10 text-[11px] shadow-xl flex items-center gap-4">
-          <div className="flex items-center gap-1">
-            <span className={myCoords ? "text-green-500" : "text-yellow-500"}>●</span> GPS
-          </div>
-          <div className="flex items-center gap-1">
-            <span className={peerId ? "text-green-500" : "text-red-500"}>●</span> PEER
-          </div>
-          <div className="flex items-center gap-1">
-            <span className={isConnected ? "text-green-500" : "text-red-500"}>●</span> SERVER
-          </div>
+      <div className="fixed bottom-4 right-4 flex gap-4 bg-black/80 p-3 rounded-lg border border-white/10 text-[11px]">
+        <div className="flex items-center gap-1">
+          <span className={myCoords ? "text-green-500" : "text-yellow-500"}>●</span> GPS
+        </div>
+        <div className="flex items-center gap-1">
+          <span className={peerId ? "text-green-500" : "text-red-500"}>●</span> PEER
+        </div>
+        <div className="flex items-center gap-1">
+          <span className={isConnected ? "text-green-500" : "text-red-500"}>●</span> SERVER
         </div>
       </div>
     </div>
