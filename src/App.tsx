@@ -31,15 +31,25 @@ const App: React.FC = () => {
     socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => setIsConnected(false));
 
-    // Инициализация PeerJS без параметров — самый стабильный вариант для облака
-    const newPeer = new Peer();
+    /**
+     * Важно: Подключаемся к PeerJS серверу, 
+     * который мы подняли внутри твоего Railway проекта.
+     */
+    const newPeer = new Peer(undefined as any, {
+      host: 'geo-mic-production-2da6.up.railway.app',
+      port: 443, // HTTPS всегда 443
+      path: '/peerjs',
+      secure: true
+    });
 
     newPeer.on('open', (id) => {
-      console.log('Peer подключен с ID:', id);
+      console.log('Peer подключен к твоему серверу. ID:', id);
       setPeerId(id);
     });
 
-    newPeer.on('error', (err) => console.error('PeerJS Error:', err));
+    newPeer.on('error', (err) => {
+      console.error('PeerJS Error:', err.type, err);
+    });
 
     peerRef.current = newPeer;
 
@@ -96,10 +106,10 @@ const App: React.FC = () => {
       )}
       
       {/* Индикаторы статуса */}
-      <div className="fixed bottom-2 right-2 text-[10px] text-slate-500 bg-black/40 p-2 rounded backdrop-blur-sm">
-        GPS: {myCoords ? '🟢' : '🔍'} | 
-        Peer: {peerId ? '🟢' : '🔴'} | 
-        Srv: {isConnected ? '🌐 Online' : '❌ Offline'}
+      <div className="fixed bottom-2 right-2 flex gap-2 text-[10px] text-slate-500 bg-black/60 p-2 rounded backdrop-blur-sm border border-white/10">
+        <div>GPS: {myCoords ? '🟢' : '🔍'}</div>
+        <div>Peer: {peerId ? '🟢' : '🔴'}</div>
+        <div>Srv: {isConnected ? '🌐 Online' : '❌ Offline'}</div>
       </div>
     </div>
   );

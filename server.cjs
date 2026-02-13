@@ -1,29 +1,37 @@
 const http = require("http");
 const { Server } = require("socket.io");
+const { ExpressPeerServer } = require("peer"); // Добавляем это
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 
-// Создаем HTTP сервер, чтобы Railway легче было его проксировать
 const httpServer = http.createServer((req, res) => {
   res.writeHead(200);
-  res.end("GEO-MIC Signal Server is Running");
+  res.end("GEO-MIC Server with PeerJS is Live");
 });
 
+// Настройка сокетов (оставляем как было, раз работает)
 const io = new Server(httpServer, {
-  cors: {
-    origin: true, // Разрешает запросы с любого домена (решает проблему CORS)
-    methods: ["GET", "POST"],
-    credentials: true
-  },
-  allowEIO3: true,
-  transports: ["polling", "websocket"] // Важно оставить оба
+  cors: { origin: true, methods: ["GET", "POST"], credentials: true },
+  transports: ["polling", "websocket"]
+});
+
+// Настройка PeerJS сервера внутри вашего приложения
+const peerServer = ExpressPeerServer(httpServer, {
+  debug: true,
+  path: "/peerjs"
+});
+
+// Интегрируем Peer сервер
+httpServer.on("upgrade", (request, socket, head) => {
+  if (request.url.startsWith("/peerjs")) {
+    peerServer.handleUpgrade(request, socket, head);
+  }
 });
 
 let currentZone = null;
 
 io.on("connection", (socket) => {
   console.log("Клиент подключен:", socket.id);
-
   if (currentZone) socket.emit("zone-updated", currentZone);
 
   socket.on("set-zone", (zone) => {
@@ -44,7 +52,6 @@ io.on("connection", (socket) => {
   });
 });
 
-// Слушаем на 0.0.0.0 — это критично для облачных хостингов
-httpServer.listen(Number(PORT), "0.0.0.0", () => {
+httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(`Сервер запущен на порту ${PORT}`);
 });
