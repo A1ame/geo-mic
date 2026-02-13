@@ -7,15 +7,13 @@ import AdminView from './components/AdminView';
 import ParticipantView from './components/ParticipantView';
 import RoleSelection from './components/RoleSelection';
 
-// Твой адрес на Railway
+// Убедитесь, что этот адрес совпадает с тем, что в панели Railway
 const SERVER_URL = 'https://geo-mic-production-2da6.up.railway.app';
 
-// Настройка сокета с поддержкой polling для обхода CORS/Proxy
 const socket: Socket = io(SERVER_URL, {
-  transports: ['polling', 'websocket'], 
+  transports: ['polling', 'websocket'],
   withCredentials: true,
-  reconnectionAttempts: 10,
-  reconnectionDelay: 2000,
+  forceNew: true
 });
 
 const App: React.FC = () => {
@@ -30,40 +28,31 @@ const App: React.FC = () => {
   const peerRef = useRef<Peer | null>(null);
 
   useEffect(() => {
-    // Управление статусом подключения
-    socket.on('connect', () => {
-      console.log('Сокет подключен!');
-      setIsConnected(true);
-    });
-    
+    socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => setIsConnected(false));
 
-    // Настройка PeerJS через официальное облако (решает проблему 404)
+    // Используем конструктор без параметров для облака PeerJS
+    // Это самый стабильный вариант против ошибок 404/CORS
     const newPeer = new Peer();
 
     newPeer.on('open', (id) => {
-      console.log('Мой Peer ID:', id);
       setPeerId(id);
+      console.log('Peer подключен, ID:', id);
+    });
+
+    newPeer.on('error', (err) => {
+      console.error('Ошибка PeerJS:', err);
     });
 
     peerRef.current = newPeer;
 
-    // GPS мониторинг
     const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-        setMyCoords([latitude, longitude]);
-        if (userName && socket.connected) {
-          socket.emit('update-coords', { lat: latitude, lng: longitude, name: userName });
-        }
-      },
-      (err) => console.error("Ошибка GPS:", err),
+      (pos) => setMyCoords([pos.coords.latitude, pos.coords.longitude]),
+      (err) => console.error("GPS Error:", err),
       { enableHighAccuracy: true }
     );
 
-    socket.on('zone-updated', (newZone) => {
-      setZone(newZone);
-    });
+    socket.on('zone-updated', (newZone) => setZone(newZone));
 
     return () => {
       navigator.geolocation.clearWatch(watchId);
@@ -72,15 +61,13 @@ const App: React.FC = () => {
       socket.off('disconnect');
       newPeer.destroy();
     };
-  }, [userName]);
+  }, []);
 
-  // Расчет геозоны
   useEffect(() => {
     if (myCoords && zone && zone.center) {
       const userPoint = turf.point([myCoords[1], myCoords[0]]); 
       const centerPoint = turf.point([zone.center.lng, zone.center.lat]);
       const distance = turf.distance(userPoint, centerPoint, { units: 'meters' });
-      
       setIsInside(distance <= zone.radius);
     }
   }, [myCoords, zone]);
@@ -110,10 +97,10 @@ const App: React.FC = () => {
         />
       )}
       
-      {/* Индикатор статуса */}
-      <div className="fixed bottom-2 right-2 text-[10px] text-slate-400 bg-black/60 p-2 rounded backdrop-blur-sm border border-white/10">
-        GPS: {myCoords ? `${myCoords[0].toFixed(4)}, ${myCoords[1].toFixed(4)}` : 'Поиск...'} | 
-        ID: {peerId ? peerId.slice(0,5) : '...'} | Статус: {isConnected ? '🌐 Online' : '❌ Offline'}
+      <div className="fixed bottom-2 right-2 text-[10px] text-slate-500 bg-black/40 p-2 rounded backdrop-blur-sm">
+        GPS: {myCoords ? '📡 OK' : '🔍 Поиск'} | 
+        Peer: {peerId ? '🟢' : '🔴'} | 
+        Server: {isConnected ? '🌐 Online' : '❌ Offline'}
       </div>
     </div>
   );

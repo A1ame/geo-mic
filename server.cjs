@@ -1,26 +1,31 @@
+const http = require("http");
 const { Server } = require("socket.io");
 
 const PORT = process.env.PORT || 3001;
 
-const io = new Server({
+// Создаем обычный HTTP сервер — Railway это любит больше
+const httpServer = http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end("Сигнальный сервер GEO-MIC активен");
+});
+
+const io = new Server(httpServer, {
   cors: {
-    // Разрешаем все источники для тестов, либо укажи свой .vercel.app
-    origin: "*", 
+    // Разрешаем вообще всё на время тестов, чтобы точно исключить CORS
+    origin: true, 
     methods: ["GET", "POST"],
     credentials: true
   },
-  transports: ['polling', 'websocket'],
-  allowEIO3: true
+  // Принудительно разрешаем долгие опросы, если WebSockets блокируются
+  transports: ["polling", "websocket"]
 });
 
 let currentZone = null;
 
 io.on("connection", (socket) => {
-  console.log("Новый пользователь:", socket.id);
+  console.log("Клиент подключен:", socket.id);
 
-  if (currentZone) {
-    socket.emit("zone-updated", currentZone);
-  }
+  if (currentZone) socket.emit("zone-updated", currentZone);
 
   socket.on("set-zone", (zone) => {
     currentZone = zone;
@@ -28,7 +33,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("join", (data) => {
-    console.log(`Пользователь ${data.name} зашел как ${data.role}`);
+    console.log(`Пользователь ${data.name} вошел как ${data.role}`);
   });
 
   socket.on("update-coords", (data) => {
@@ -40,6 +45,7 @@ io.on("connection", (socket) => {
   });
 });
 
-// Запуск строго через Number(PORT)
-io.listen(Number(PORT));
-console.log(`Сигнальный сервер работает на порту ${PORT}`);
+// Слушаем на 0.0.0.0 — это критично для внешних подключений
+httpServer.listen(PORT, "0.0.0.0", () => {
+  console.log(`Сервер запущен на порту ${PORT}`);
+});
