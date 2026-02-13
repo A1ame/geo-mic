@@ -7,13 +7,13 @@ import AdminView from './components/AdminView';
 import ParticipantView from './components/ParticipantView';
 import RoleSelection from './components/RoleSelection';
 
-// Убедитесь, что этот адрес совпадает с тем, что в панели Railway
 const SERVER_URL = 'https://geo-mic-production-2da6.up.railway.app';
 
+// Настройка для стабильного соединения через прокси Railway
 const socket: Socket = io(SERVER_URL, {
   transports: ['polling', 'websocket'],
   withCredentials: true,
-  forceNew: true
+  reconnectionAttempts: 10
 });
 
 const App: React.FC = () => {
@@ -31,18 +31,15 @@ const App: React.FC = () => {
     socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => setIsConnected(false));
 
-    // Используем конструктор без параметров для облака PeerJS
-    // Это самый стабильный вариант против ошибок 404/CORS
+    // Инициализация PeerJS без параметров — самый стабильный вариант для облака
     const newPeer = new Peer();
 
     newPeer.on('open', (id) => {
+      console.log('Peer подключен с ID:', id);
       setPeerId(id);
-      console.log('Peer подключен, ID:', id);
     });
 
-    newPeer.on('error', (err) => {
-      console.error('Ошибка PeerJS:', err);
-    });
+    newPeer.on('error', (err) => console.error('PeerJS Error:', err));
 
     peerRef.current = newPeer;
 
@@ -63,6 +60,7 @@ const App: React.FC = () => {
     };
   }, []);
 
+  // Расчет вхождения в зону
   useEffect(() => {
     if (myCoords && zone && zone.center) {
       const userPoint = turf.point([myCoords[1], myCoords[0]]); 
@@ -97,10 +95,11 @@ const App: React.FC = () => {
         />
       )}
       
+      {/* Индикаторы статуса */}
       <div className="fixed bottom-2 right-2 text-[10px] text-slate-500 bg-black/40 p-2 rounded backdrop-blur-sm">
-        GPS: {myCoords ? '📡 OK' : '🔍 Поиск'} | 
+        GPS: {myCoords ? '🟢' : '🔍'} | 
         Peer: {peerId ? '🟢' : '🔴'} | 
-        Server: {isConnected ? '🌐 Online' : '❌ Offline'}
+        Srv: {isConnected ? '🌐 Online' : '❌ Offline'}
       </div>
     </div>
   );

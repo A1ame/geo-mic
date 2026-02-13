@@ -3,21 +3,20 @@ const { Server } = require("socket.io");
 
 const PORT = process.env.PORT || 3001;
 
-// Создаем обычный HTTP сервер — Railway это любит больше
+// Создаем HTTP сервер, чтобы Railway легче было его проксировать
 const httpServer = http.createServer((req, res) => {
   res.writeHead(200);
-  res.end("Сигнальный сервер GEO-MIC активен");
+  res.end("GEO-MIC Signal Server is Running");
 });
 
 const io = new Server(httpServer, {
   cors: {
-    // Разрешаем вообще всё на время тестов, чтобы точно исключить CORS
-    origin: true, 
+    origin: true, // Разрешает запросы с любого домена (решает проблему CORS)
     methods: ["GET", "POST"],
     credentials: true
   },
-  // Принудительно разрешаем долгие опросы, если WebSockets блокируются
-  transports: ["polling", "websocket"]
+  allowEIO3: true,
+  transports: ["polling", "websocket"] // Важно оставить оба
 });
 
 let currentZone = null;
@@ -45,7 +44,7 @@ io.on("connection", (socket) => {
   });
 });
 
-// Слушаем на 0.0.0.0 — это критично для внешних подключений
-httpServer.listen(PORT, "0.0.0.0", () => {
+// Слушаем на 0.0.0.0 — это критично для облачных хостингов
+httpServer.listen(Number(PORT), "0.0.0.0", () => {
   console.log(`Сервер запущен на порту ${PORT}`);
 });
