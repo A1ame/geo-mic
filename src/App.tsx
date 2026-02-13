@@ -9,7 +9,6 @@ import RoleSelection from './components/RoleSelection';
 
 const SERVER_URL = 'https://geo-mic-production-2da6.up.railway.app';
 
-// Настройка для стабильного соединения через прокси Railway
 const socket: Socket = io(SERVER_URL, {
   transports: ['polling', 'websocket'],
   withCredentials: true,
@@ -31,19 +30,22 @@ const App: React.FC = () => {
     socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => setIsConnected(false));
 
-    /**
-     * Важно: Подключаемся к PeerJS серверу, 
-     * который мы подняли внутри твоего Railway проекта.
-     */
+    // Настройка PeerJS с использованием STUN-серверов Google
     const newPeer = new Peer(undefined as any, {
       host: 'geo-mic-production-2da6.up.railway.app',
-      port: 443, // HTTPS всегда 443
+      port: 443,
       path: '/peerjs',
-      secure: true
+      secure: true,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      }
     });
 
     newPeer.on('open', (id) => {
-      console.log('Peer подключен к твоему серверу. ID:', id);
+      console.log('Peer подключен успешно. ID:', id);
       setPeerId(id);
     });
 
@@ -70,7 +72,6 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Расчет вхождения в зону
   useEffect(() => {
     if (myCoords && zone && zone.center) {
       const userPoint = turf.point([myCoords[1], myCoords[0]]); 
@@ -105,7 +106,6 @@ const App: React.FC = () => {
         />
       )}
       
-      {/* Индикаторы статуса */}
       <div className="fixed bottom-2 right-2 flex gap-2 text-[10px] text-slate-500 bg-black/60 p-2 rounded backdrop-blur-sm border border-white/10">
         <div>GPS: {myCoords ? '🟢' : '🔍'}</div>
         <div>Peer: {peerId ? '🟢' : '🔴'}</div>
