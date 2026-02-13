@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import Peer from 'peerjs';
-import * as turf from '@turf/turf';
 
 import AdminView from './components/AdminView';
 import ParticipantView from './components/ParticipantView';
@@ -18,17 +17,13 @@ const App: React.FC = () => {
   const [role, setRole] = useState<'admin' | 'user' | null>(null);
   const [userName, setUserName] = useState('');
   const [peerId, setPeerId] = useState<string>('');
-  const [zone, setZone] = useState<any>(null);
-  const [myCoords, setMyCoords] = useState<[number, number] | null>(null);
   const [isConnected, setIsConnected] = useState(false);
 
   const peerRef = useRef<Peer | null>(null);
 
-  // Функция создания Peer-соединения
   const startPeerConnection = () => {
     if (peerRef.current) return;
-
-    const newId = `id-${Math.random().toString(36).substr(2, 9)}`;
+    const newId = `id-${Math.random().toString(36).substring(2, 11)}`;
     
     const peer = new Peer(newId, {
       host: 'geo-mic-production-2da6.up.railway.app',
@@ -38,36 +33,20 @@ const App: React.FC = () => {
       debug: 1
     });
 
-    peer.on('open', (id) => {
-      console.log('✅ Peer connection established:', id);
-      setPeerId(id);
+    peer.on('open', (id) => setPeerId(id));
+    peer.on('error', () => {
+      setTimeout(startPeerConnection, 3000);
     });
-
-    peer.on('error', (err) => {
-      console.error('❌ PeerJS Error:', err.type);
-      if (err.type === 'network' || err.type === 'server-error') {
-        // Рекурсивный перезапуск при обрыве
-        setTimeout(startPeerConnection, 3000);
-      }
-    });
-
     peerRef.current = peer;
   };
 
   useEffect(() => {
     socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => setIsConnected(false));
-    socket.on('zone-updated', (newZone) => setZone(newZone));
-
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => setMyCoords([pos.coords.latitude, pos.coords.longitude]),
-      (err) => console.error("GPS Error:", err),
-      { enableHighAccuracy: true }
-    );
 
     return () => {
-      navigator.geolocation.clearWatch(watchId);
-      socket.off('zone-updated');
+      socket.off('connect');
+      socket.off('disconnect');
       if (peerRef.current) peerRef.current.destroy();
     };
   }, []);
@@ -76,8 +55,6 @@ const App: React.FC = () => {
     setRole(selectedRole);
     setUserName(name);
     socket.emit('join', { name, role: selectedRole });
-    
-    // Запускаем Peer только после взаимодействия пользователя
     startPeerConnection();
   };
 
@@ -86,7 +63,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white selection:bg-indigo-500/30">
+    <div className="min-h-screen bg-slate-900 text-white">
       {role === 'admin' ? (
         <AdminView socket={socket} peer={peerRef.current!} />
       ) : (
@@ -97,18 +74,12 @@ const App: React.FC = () => {
         />
       )}
       
-      {/* Статус-панель */}
-      <div className="fixed bottom-4 right-4 flex flex-col gap-2">
-        <div className="flex items-center gap-3 px-3 py-2 bg-black/60 backdrop-blur-md rounded-lg border border-white/10 text-[11px] shadow-2xl">
-          <div className="flex items-center gap-1.5">
-            <span className={peerId ? "text-green-400" : "text-red-400"}>●</span>
-            <span>VOICE</span>
-          </div>
-          <div className="w-px h-3 bg-white/10" />
-          <div className="flex items-center gap-1.5">
-            <span className={isConnected ? "text-green-400" : "text-red-400"}>●</span>
-            <span>SERVER</span>
-          </div>
+      <div className="fixed bottom-4 right-4 flex gap-3 px-3 py-2 bg-black/60 backdrop-blur-md rounded-lg border border-white/10 text-[10px]">
+        <div className="flex items-center gap-1.5">
+          <span className={peerId ? "text-green-400" : "text-red-400"}>●</span> VOICE
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className={isConnected ? "text-green-400" : "text-red-400"}>●</span> SERVER
         </div>
       </div>
     </div>
