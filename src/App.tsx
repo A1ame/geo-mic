@@ -11,8 +11,7 @@ const SERVER_URL = 'https://geo-mic-production-2da6.up.railway.app';
 
 const socket: Socket = io(SERVER_URL, {
   transports: ['polling', 'websocket'],
-  withCredentials: true,
-  reconnection: true
+  withCredentials: true
 });
 
 const App: React.FC = () => {
@@ -20,65 +19,41 @@ const App: React.FC = () => {
   const [userName, setUserName] = useState('');
   const [peerId, setPeerId] = useState<string>('');
   const [isConnected, setIsConnected] = useState(false);
+  const [peerReady, setPeerReady] = useState(false);
 
   const peerRef = useRef<any>(null);
 
   const startPeerConnection = () => {
-    // Проверка, загрузилась ли библиотека из CDN
-    if (typeof Peer === 'undefined') {
-      console.error("Библиотека PeerJS не загружена!");
-      setTimeout(startPeerConnection, 1000);
-      return;
-    }
-
-    if (peerRef.current) return;
+    if (typeof Peer === 'undefined' || peerRef.current) return;
 
     const newId = `id-${Math.random().toString(36).substring(2, 11)}`;
-    
-    try {
-      const peer = new Peer(newId, {
-        host: 'geo-mic-production-2da6.up.railway.app',
-        port: 443,
-        path: '/peerjs',
-        secure: true,
-        debug: 1
-      });
+    const peer = new Peer(newId, {
+      host: 'geo-mic-production-2da6.up.railway.app',
+      port: 443,
+      path: '/peerjs',
+      secure: true,
+      debug: 1
+    });
 
-      peer.on('open', (id: string) => {
-        console.log('✅ Voice OK:', id);
-        setPeerId(id);
-      });
+    peer.on('open', (id: string) => {
+      setPeerId(id);
+      setPeerReady(true);
+    });
 
-      peer.on('error', (err: any) => {
-        console.error('Peer error:', err.type);
-        if (err.type === 'network' || err.type === 'server-error') {
-          peer.destroy();
-          peerRef.current = null;
-          setPeerId('');
-          setTimeout(startPeerConnection, 3000);
-        }
-      });
+    peer.on('error', () => {
+      setPeerReady(false);
+      peerRef.current = null;
+      setTimeout(startPeerConnection, 3000);
+    });
 
-      peerRef.current = peer;
-    } catch (e) {
-      console.error("Ошибка при создании Peer:", e);
-    }
+    peerRef.current = peer;
   };
 
   useEffect(() => {
     socket.on('connect', () => setIsConnected(true));
-    socket.on('disconnect', () => {
-      setIsConnected(false);
-      setPeerId('');
-    });
-
+    socket.on('disconnect', () => setIsConnected(false));
     return () => {
-      socket.off('connect');
-      socket.off('disconnect');
-      if (peerRef.current) {
-        peerRef.current.destroy();
-        peerRef.current = null;
-      }
+      if (peerRef.current) peerRef.current.destroy();
     };
   }, []);
 
@@ -86,8 +61,7 @@ const App: React.FC = () => {
     setRole(selectedRole);
     setUserName(name);
     socket.emit('join', { name, role: selectedRole });
-    // Запуск Peer с небольшой задержкой, чтобы сокет успел соединиться
-    setTimeout(startPeerConnection, 1000);
+    startPeerConnection();
   };
 
   if (!role) {
@@ -96,18 +70,20 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-900 text-white">
-      {/* Пробрасываем peer только если он создан */}
-      {role === 'admin' ? (
-        <AdminView socket={socket} peer={peerRef.current} />
+      {/* Отображаем вью только когда Peer полностью готов */}
+      {peerReady ? (
+        role === 'admin' ? (
+          <AdminView socket={socket} peer={peerRef.current} />
+        ) : (
+          <ParticipantView socket={socket} peer={peerRef.current} userName={userName} />
+        )
       ) : (
-        <ParticipantView 
-          socket={socket} 
-          peer={peerRef.current} 
-          userName={userName}
-        />
+        <div className="flex h-screen items-center justify-center">
+          <p className="animate-pulse">Подключение к голосовому серверу...</p>
+        </div>
       )}
       
-      <div className="fixed bottom-4 right-4 flex gap-3 px-3 py-2 bg-black/60 backdrop-blur-md rounded-lg border border-white/10 text-[10px]">
+      <div className="fixed bottom-4 right-4 flex gap-3 px-3 py-2 bg-black/60 rounded-lg border border-white/10 text-[10px]">
         <div className="flex items-center gap-1.5">
           <span className={peerId ? "text-green-400" : "text-red-400"}>●</span> VOICE
         </div>
