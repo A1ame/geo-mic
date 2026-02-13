@@ -7,12 +7,15 @@ import AdminView from './components/AdminView';
 import ParticipantView from './components/ParticipantView';
 import RoleSelection from './components/RoleSelection';
 
-// Твой реальный адрес сервера на Railway
+// App.tsx
+
 const SERVER_URL = 'https://geo-mic-production-2da6.up.railway.app';
 
-// Инициализируем сокет с принудительным использованием WebSocket для стабильности
 const socket: Socket = io(SERVER_URL, {
-  transports: ['websocket']
+  transports: ['websocket', 'polling'], // Добавляем polling как запасной вариант
+  withCredentials: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000,
 });
 
 const App: React.FC = () => {
@@ -32,11 +35,10 @@ const App: React.FC = () => {
     socket.on('disconnect', () => setIsConnected(false));
 
     // Настройка PeerJS для работы через HTTPS (порт 443)
-    const newPeer = new Peer({
-      host: '/',
-      secure: true,
-      port: 443
-    });
+   const newPeer = new Peer({
+  // Убираем host и port, чтобы использовать бесплатное облако PeerJS
+  debug: 2
+});
 
     newPeer.on('open', (id) => {
       console.log('Мой Peer ID:', id);
