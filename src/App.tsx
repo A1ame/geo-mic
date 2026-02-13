@@ -7,15 +7,15 @@ import AdminView from './components/AdminView';
 import ParticipantView from './components/ParticipantView';
 import RoleSelection from './components/RoleSelection';
 
-// App.tsx
-
+// Твой адрес на Railway
 const SERVER_URL = 'https://geo-mic-production-2da6.up.railway.app';
 
+// Настройка сокета с поддержкой polling для обхода CORS/Proxy
 const socket: Socket = io(SERVER_URL, {
-  transports: ['websocket', 'polling'], // Добавляем polling как запасной вариант
+  transports: ['polling', 'websocket'], 
   withCredentials: true,
-  reconnectionAttempts: 5,
-  reconnectionDelay: 1000,
+  reconnectionAttempts: 10,
+  reconnectionDelay: 2000,
 });
 
 const App: React.FC = () => {
@@ -30,15 +30,16 @@ const App: React.FC = () => {
   const peerRef = useRef<Peer | null>(null);
 
   useEffect(() => {
-    // Проверка статуса подключения сокета
-    socket.on('connect', () => setIsConnected(true));
+    // Управление статусом подключения
+    socket.on('connect', () => {
+      console.log('Сокет подключен!');
+      setIsConnected(true);
+    });
+    
     socket.on('disconnect', () => setIsConnected(false));
 
-    // Настройка PeerJS для работы через HTTPS (порт 443)
-   const newPeer = new Peer({
-  // Убираем host и port, чтобы использовать бесплатное облако PeerJS
-  debug: 2
-});
+    // Настройка PeerJS через официальное облако (решает проблему 404)
+    const newPeer = new Peer();
 
     newPeer.on('open', (id) => {
       console.log('Мой Peer ID:', id);
@@ -47,7 +48,7 @@ const App: React.FC = () => {
 
     peerRef.current = newPeer;
 
-    // Слежение за GPS
+    // GPS мониторинг
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
@@ -73,7 +74,7 @@ const App: React.FC = () => {
     };
   }, [userName]);
 
-  // Проверка вхождения в геозону
+  // Расчет геозоны
   useEffect(() => {
     if (myCoords && zone && zone.center) {
       const userPoint = turf.point([myCoords[1], myCoords[0]]); 
@@ -109,10 +110,10 @@ const App: React.FC = () => {
         />
       )}
       
-      {/* Индикатор статуса в углу */}
-      <div className="fixed bottom-2 right-2 text-[10px] text-slate-500 bg-black/40 p-2 rounded backdrop-blur-sm">
+      {/* Индикатор статуса */}
+      <div className="fixed bottom-2 right-2 text-[10px] text-slate-400 bg-black/60 p-2 rounded backdrop-blur-sm border border-white/10">
         GPS: {myCoords ? `${myCoords[0].toFixed(4)}, ${myCoords[1].toFixed(4)}` : 'Поиск...'} | 
-        ID: {peerId.slice(0,5)} | Статус: {isConnected ? '🌐 Online' : '❌ Offline'}
+        ID: {peerId ? peerId.slice(0,5) : '...'} | Статус: {isConnected ? '🌐 Online' : '❌ Offline'}
       </div>
     </div>
   );

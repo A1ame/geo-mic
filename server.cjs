@@ -4,20 +4,23 @@ const PORT = process.env.PORT || 3001;
 
 const io = new Server({
   cors: {
-    origin: "*", // Позже здесь лучше прописать https://geo-mic.vercel.app
+    // Разрешаем все источники для тестов, либо укажи свой .vercel.app
+    origin: "*", 
     methods: ["GET", "POST"],
     credentials: true
   },
-  allowEIO3: true, // Для обратной совместимости
-  transports: ['websocket', 'polling'] 
+  transports: ['polling', 'websocket'],
+  allowEIO3: true
 });
 
 let currentZone = null;
 
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
+  console.log("Новый пользователь:", socket.id);
 
-  if (currentZone) socket.emit("zone-updated", currentZone);
+  if (currentZone) {
+    socket.emit("zone-updated", currentZone);
+  }
 
   socket.on("set-zone", (zone) => {
     currentZone = zone;
@@ -25,7 +28,11 @@ io.on("connection", (socket) => {
   });
 
   socket.on("join", (data) => {
-    console.log(`User ${data.name} joined as ${data.role}`);
+    console.log(`Пользователь ${data.name} зашел как ${data.role}`);
+  });
+
+  socket.on("update-coords", (data) => {
+    io.emit("participant-moved", { id: socket.id, ...data });
   });
 
   socket.on("disconnect", () => {
@@ -33,6 +40,6 @@ io.on("connection", (socket) => {
   });
 });
 
-// На Railway крайне важно просто слушать PORT без лишних параметров
-io.listen(parseInt(PORT)); 
-console.log(`Server running on port ${PORT}`);
+// Запуск строго через Number(PORT)
+io.listen(Number(PORT));
+console.log(`Сигнальный сервер работает на порту ${PORT}`);
