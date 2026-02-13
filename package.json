@@ -16,6 +16,7 @@
   "dependencies": {
     "@geoman-io/leaflet-geoman-free": "^2.19.2",
     "@turf/turf": "^7.3.4",
+    "express": "^5.2.1",
     "leaflet": "^1.9.4",
     "peer": "^1.0.2",
     "peerjs": "^1.5.5",

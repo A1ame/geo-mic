@@ -5,14 +5,14 @@ import AdminView from './components/AdminView';
 import ParticipantView from './components/ParticipantView';
 import RoleSelection from './components/RoleSelection';
 
-// Объявляем Peer для TypeScript, так как он загружен через скрипт
 declare const Peer: any;
 
 const SERVER_URL = 'https://geo-mic-production-2da6.up.railway.app';
 
 const socket: Socket = io(SERVER_URL, {
   transports: ['polling', 'websocket'],
-  withCredentials: true
+  withCredentials: true,
+  reconnection: true
 });
 
 const App: React.FC = () => {
@@ -24,43 +24,61 @@ const App: React.FC = () => {
   const peerRef = useRef<any>(null);
 
   const startPeerConnection = () => {
+    // Проверка, загрузилась ли библиотека из CDN
+    if (typeof Peer === 'undefined') {
+      console.error("Библиотека PeerJS не загружена!");
+      setTimeout(startPeerConnection, 1000);
+      return;
+    }
+
     if (peerRef.current) return;
 
     const newId = `id-${Math.random().toString(36).substring(2, 11)}`;
     
-    // Используем глобальный конструктор Peer
-    const peer = new Peer(newId, {
-      host: 'geo-mic-production-2da6.up.railway.app',
-      port: 443,
-      path: '/peerjs',
-      secure: true,
-      debug: 1
-    });
+    try {
+      const peer = new Peer(newId, {
+        host: 'geo-mic-production-2da6.up.railway.app',
+        port: 443,
+        path: '/peerjs',
+        secure: true,
+        debug: 1
+      });
 
-    peer.on('open', (id: string) => {
-      console.log('✅ Голосовая связь активна:', id);
-      setPeerId(id);
-    });
+      peer.on('open', (id: string) => {
+        console.log('✅ Voice OK:', id);
+        setPeerId(id);
+      });
 
-    peer.on('error', (err: any) => {
-      console.error('PeerJS Error:', err.type);
-      if (err.type === 'network' || err.type === 'server-error') {
-        peerRef.current = null;
-        setTimeout(startPeerConnection, 3000);
-      }
-    });
+      peer.on('error', (err: any) => {
+        console.error('Peer error:', err.type);
+        if (err.type === 'network' || err.type === 'server-error') {
+          peer.destroy();
+          peerRef.current = null;
+          setPeerId('');
+          setTimeout(startPeerConnection, 3000);
+        }
+      });
 
-    peerRef.current = peer;
+      peerRef.current = peer;
+    } catch (e) {
+      console.error("Ошибка при создании Peer:", e);
+    }
   };
 
   useEffect(() => {
     socket.on('connect', () => setIsConnected(true));
-    socket.on('disconnect', () => setIsConnected(false));
+    socket.on('disconnect', () => {
+      setIsConnected(false);
+      setPeerId('');
+    });
 
     return () => {
       socket.off('connect');
       socket.off('disconnect');
-      if (peerRef.current) peerRef.current.destroy();
+      if (peerRef.current) {
+        peerRef.current.destroy();
+        peerRef.current = null;
+      }
     };
   }, []);
 
@@ -68,9 +86,8 @@ const App: React.FC = () => {
     setRole(selectedRole);
     setUserName(name);
     socket.emit('join', { name, role: selectedRole });
-    
-    // Небольшая задержка перед запуском Peer для стабильности
-    setTimeout(startPeerConnection, 500);
+    // Запуск Peer с небольшой задержкой, чтобы сокет успел соединиться
+    setTimeout(startPeerConnection, 1000);
   };
 
   if (!role) {
@@ -78,7 +95,8 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white font-sans">
+    <div className="min-h-screen bg-slate-900 text-white">
+      {/* Пробрасываем peer только если он создан */}
       {role === 'admin' ? (
         <AdminView socket={socket} peer={peerRef.current} />
       ) : (
