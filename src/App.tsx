@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import Peer from 'peerjs';
 
 import AdminView from './components/AdminView';
 import ParticipantView from './components/ParticipantView';
 import RoleSelection from './components/RoleSelection';
+
+// Объявляем Peer для TypeScript, так как он загружен через скрипт
+declare const Peer: any;
 
 const SERVER_URL = 'https://geo-mic-production-2da6.up.railway.app';
 
@@ -19,12 +21,14 @@ const App: React.FC = () => {
   const [peerId, setPeerId] = useState<string>('');
   const [isConnected, setIsConnected] = useState(false);
 
-  const peerRef = useRef<Peer | null>(null);
+  const peerRef = useRef<any>(null);
 
   const startPeerConnection = () => {
     if (peerRef.current) return;
+
     const newId = `id-${Math.random().toString(36).substring(2, 11)}`;
     
+    // Используем глобальный конструктор Peer
     const peer = new Peer(newId, {
       host: 'geo-mic-production-2da6.up.railway.app',
       port: 443,
@@ -33,10 +37,19 @@ const App: React.FC = () => {
       debug: 1
     });
 
-    peer.on('open', (id) => setPeerId(id));
-    peer.on('error', () => {
-      setTimeout(startPeerConnection, 3000);
+    peer.on('open', (id: string) => {
+      console.log('✅ Голосовая связь активна:', id);
+      setPeerId(id);
     });
+
+    peer.on('error', (err: any) => {
+      console.error('PeerJS Error:', err.type);
+      if (err.type === 'network' || err.type === 'server-error') {
+        peerRef.current = null;
+        setTimeout(startPeerConnection, 3000);
+      }
+    });
+
     peerRef.current = peer;
   };
 
@@ -55,7 +68,9 @@ const App: React.FC = () => {
     setRole(selectedRole);
     setUserName(name);
     socket.emit('join', { name, role: selectedRole });
-    startPeerConnection();
+    
+    // Небольшая задержка перед запуском Peer для стабильности
+    setTimeout(startPeerConnection, 500);
   };
 
   if (!role) {
@@ -63,13 +78,13 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white">
+    <div className="min-h-screen bg-slate-900 text-white font-sans">
       {role === 'admin' ? (
-        <AdminView socket={socket} peer={peerRef.current!} />
+        <AdminView socket={socket} peer={peerRef.current} />
       ) : (
         <ParticipantView 
           socket={socket} 
-          peer={peerRef.current!} 
+          peer={peerRef.current} 
           userName={userName}
         />
       )}
