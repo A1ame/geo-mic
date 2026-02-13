@@ -9,25 +9,29 @@ const FRONTEND_URL = "https://geo-mic.vercel.app";
 
 const httpServer = http.createServer(app);
 
-// Настройка Socket.io
+// Настройка Socket.io с расширенным CORS
 const io = new Server(httpServer, {
   cors: {
-    origin: FRONTEND_URL,
+    origin: [FRONTEND_URL, "http://localhost:5173"], // Разрешаем фронт и локалку
     methods: ["GET", "POST"],
     credentials: true
   },
-  transports: ["polling", "websocket"] // Важно для стабильности
+  transports: ["polling", "websocket"]
 });
 
-// Настройка PeerServer как middleware
+// Настройка PeerServer
 const peerServer = ExpressPeerServer(httpServer, {
   debug: true,
   path: "/",
   proxied: true,
-  allow_discovery: true
+  allow_discovery: true,
+  // Добавляем CORS специфично для PeerJS (исправляет image_a61856.png)
+  corsOptions: {
+    origin: FRONTEND_URL,
+    methods: ["GET", "POST"]
+  }
 });
 
-// Подключаем PeerJS по пути /peerjs
 app.use("/peerjs", peerServer);
 
 app.get("/", (req, res) => {
@@ -39,22 +43,48 @@ io.on("connection", (socket) => {
 
   socket.on("join", (data) => {
     console.log(`User ${data.name} joined as ${data.role}`);
+    socket.join("main-room"); // Группируем пользователей
   });
 
+  // Админ устанавливает зону (центр и радиус)
   socket.on("set-zone", (zone) => {
-    io.emit("zone-updated", zone);
+    console.log("Zone updated:", zone);
+    io.emit("zone-updated", zone); // Рассылаем всем участникам
   });
 
+  // Участник передает свои координаты
   socket.on("update-coords", (data) => {
-    socket.broadcast.emit("participant-moved", { id: socket.id, ...data });
+    // Рассылаем координаты всем, кроме отправителя
+    socket.broadcast.emit("participant-moved", { 
+      id: socket.id, 
+      ...data 
+    });
+  });
+
+  // Логика передачи микрофона
+  socket.on("raise-hand", (data) => {
+    // Передаем админу инфо о том, что кто-то хочет говорить
+    io.emit("new-hand-raised", { 
+      id: socket.id, 
+      name: data.name, 
+      peerId: data.peerId 
+    });
+  });
+
+  socket.on("give-mic", (data) => {
+    // Сообщаем конкретному пользователю, что ему дали микрофон
+    io.emit("mic-granted", { 
+      targetPeerId: data.targetPeerId, 
+      adminPeerId: data.adminPeerId 
+    });
   });
 
   socket.on("disconnect", () => {
+    console.log("User disconnected:", socket.id);
     io.emit("user-disconnected", socket.id);
   });
 });
 
-// Запуск
 httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(`Server started on port ${PORT}`);
 });
