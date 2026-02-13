@@ -11,8 +11,7 @@ const SERVER_URL = 'https://geo-mic-production-2da6.up.railway.app';
 
 const socket: Socket = io(SERVER_URL, {
   transports: ['polling', 'websocket'],
-  withCredentials: true,
-  reconnectionAttempts: 10
+  withCredentials: true
 });
 
 const App: React.FC = () => {
@@ -30,27 +29,22 @@ const App: React.FC = () => {
     socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => setIsConnected(false));
 
-    // Настройка PeerJS с использованием STUN-серверов Google
-    const newPeer = new Peer(undefined as any, {
+    // Создаем Peer с явным указанием настроек
+    const newPeer = new Peer('', {
       host: 'geo-mic-production-2da6.up.railway.app',
       port: 443,
       path: '/peerjs',
       secure: true,
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-      }
+      debug: 3
     });
 
     newPeer.on('open', (id) => {
-      console.log('Peer подключен успешно. ID:', id);
+      console.log('Peer ID получен:', id);
       setPeerId(id);
     });
 
     newPeer.on('error', (err) => {
-      console.error('PeerJS Error:', err.type, err);
+      console.error('PeerJS Error:', err.type);
     });
 
     peerRef.current = newPeer;

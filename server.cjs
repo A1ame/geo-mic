@@ -6,32 +6,32 @@ const PORT = process.env.PORT || 3000;
 
 const httpServer = http.createServer((req, res) => {
   res.writeHead(200);
-  res.end("GEO-MIC Server with PeerJS is Live");
+  res.end("GEO-MIC Server is Live");
 });
 
-// Сокеты
+// Настройка Socket.io
 const io = new Server(httpServer, {
-  cors: { 
-    origin: true, // Разрешаем всё для обхода CORS ошибок
-    methods: ["GET", "POST"], 
-    credentials: true 
+  cors: {
+    origin: "*", // Разрешаем доступ всем для тестов
+    methods: ["GET", "POST"],
+    credentials: true
   },
   transports: ["polling", "websocket"]
 });
 
-// PeerJS сервер с исправленными настройками безопасности
+// Финальная настройка PeerServer с исправленным CORS
 const peerServer = ExpressPeerServer(httpServer, {
   debug: true,
   path: "/peerjs",
-  proxied: true, // КРИТИЧНО для Railway
+  proxied: true, 
   allow_discovery: true,
   corsOptions: {
-    origin: true,
+    origin: "*", // Это уберет красную ошибку CORS на твоем скрине
     methods: ["GET", "POST"]
   }
 });
 
-// Интеграция Peer сервера в HTTP поток
+// Правильная обработка Upgrade для WebSocket PeerJS
 httpServer.on("upgrade", (request, socket, head) => {
   if (request.url.startsWith("/peerjs")) {
     peerServer.handleUpgrade(request, socket, head);
