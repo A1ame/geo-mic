@@ -17,6 +17,7 @@
     "@geoman-io/leaflet-geoman-free": "^2.19.2",
     "@turf/turf": "^7.3.4",
     "leaflet": "^1.9.4",
+    "peer": "^1.0.2",
     "peerjs": "^1.5.5",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
