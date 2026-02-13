@@ -30,21 +30,27 @@ const App: React.FC = () => {
     socket.on('disconnect', () => setIsConnected(false));
     socket.on('zone-updated', (newZone) => setZone(newZone));
 
-    const newPeer = new Peer({
+    // Генерируем случайный ID, чтобы избежать конфликтов с текстом ответа сервера
+    const randomId = 'user-' + Math.random().toString(36).substr(2, 9);
+
+    const newPeer = new Peer(randomId, {
       host: 'geo-mic-production-2da6.up.railway.app',
       port: 443,
       path: '/peerjs',
       secure: true,
-      debug: 3
+      debug: 3,
+      config: {
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      }
     });
 
     newPeer.on('open', (id) => {
-      console.log('✅ Peer ID получен:', id);
+      console.log('✅ Peer подключен успешно. ID:', id);
       setPeerId(id);
     });
 
     newPeer.on('error', (err) => {
-      console.error('❌ PeerJS Error:', err.type);
+      console.error('❌ PeerJS Error:', err.type, err);
     });
 
     peerRef.current = newPeer;
@@ -86,7 +92,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white">
+    <div className="min-h-screen bg-slate-900 text-white font-sans">
       {role === 'admin' ? (
         <AdminView socket={socket} peer={peerRef.current!} />
       ) : (
@@ -98,15 +104,18 @@ const App: React.FC = () => {
         />
       )}
       
-      <div className="fixed bottom-4 right-4 flex gap-4 bg-black/80 p-3 rounded-lg border border-white/10 text-[11px]">
-        <div className="flex items-center gap-1">
-          <span className={myCoords ? "text-green-500" : "text-yellow-500"}>●</span> GPS
-        </div>
-        <div className="flex items-center gap-1">
-          <span className={peerId ? "text-green-500" : "text-red-500"}>●</span> PEER
-        </div>
-        <div className="flex items-center gap-1">
-          <span className={isConnected ? "text-green-500" : "text-red-500"}>●</span> SERVER
+      {/* Статус-панель */}
+      <div className="fixed bottom-4 right-4 flex flex-col gap-2">
+        <div className="px-3 py-2 bg-black/80 backdrop-blur-md rounded-lg border border-white/10 text-[10px] shadow-2xl flex items-center gap-4">
+          <div className="flex items-center gap-1">
+            <span className={myCoords ? "text-green-500" : "text-yellow-500"}>●</span> GPS
+          </div>
+          <div className="flex items-center gap-1">
+            <span className={peerId ? "text-green-500" : "text-red-500"}>●</span> PEER
+          </div>
+          <div className="flex items-center gap-1">
+            <span className={isConnected ? "text-green-500" : "text-red-500"}>●</span> SERVER
+          </div>
         </div>
       </div>
     </div>

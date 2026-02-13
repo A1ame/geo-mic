@@ -6,7 +6,7 @@ const PORT = process.env.PORT || 3000;
 const FRONTEND_URL = "https://geo-mic.vercel.app";
 
 const httpServer = http.createServer((req, res) => {
-  // ПРИНУДИТЕЛЬНЫЕ CORS ЗАГОЛОВКИ ДЛЯ ВСЕХ ЗАПРОСОВ
+  // Принудительные заголовки для CORS
   res.setHeader("Access-Control-Allow-Origin", FRONTEND_URL);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -19,7 +19,7 @@ const httpServer = http.createServer((req, res) => {
   }
 
   res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("GEO-MIC Backend is running...");
+  res.end("GEO-MIC Server is Live");
 });
 
 // Настройка Socket.io
@@ -37,6 +37,7 @@ const peerServer = ExpressPeerServer(httpServer, {
   debug: true,
   path: "/peerjs",
   proxied: true,
+  allow_discovery: true,
   corsOptions: {
     origin: FRONTEND_URL,
     methods: ["GET", "POST"],
@@ -44,7 +45,7 @@ const peerServer = ExpressPeerServer(httpServer, {
   }
 });
 
-// Правильная обработка Upgrade
+// Критически важный блок для Railway: правильный апгрейд протокола
 httpServer.on("upgrade", (request, socket, head) => {
   if (request.url.startsWith("/peerjs")) {
     peerServer.handleUpgrade(request, socket, head);
@@ -54,7 +55,7 @@ httpServer.on("upgrade", (request, socket, head) => {
 let currentZone = null;
 
 io.on("connection", (socket) => {
-  console.log("Клиент подключен:", socket.id);
+  console.log("Клиент подключен к сокету:", socket.id);
   if (currentZone) socket.emit("zone-updated", currentZone);
 
   socket.on("set-zone", (zone) => {
@@ -63,7 +64,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("join", (data) => {
-    console.log(`Пользователь ${data.name} вошел как ${data.role}`);
+    console.log(`Пользователь ${data.name} (${data.role}) вошел`);
   });
 
   socket.on("update-coords", (data) => {
