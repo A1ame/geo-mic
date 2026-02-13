@@ -15,40 +15,46 @@ const io = new Server(httpServer, {
     origin: FRONTEND_URL,
     methods: ["GET", "POST"],
     credentials: true
-  }
+  },
+  transports: ["polling", "websocket"] // Важно для стабильности
 });
 
-// Настройка PeerServer как middleware Express
+// Настройка PeerServer как middleware
 const peerServer = ExpressPeerServer(httpServer, {
   debug: true,
   path: "/",
-  proxied: true
+  proxied: true,
+  allow_discovery: true
 });
 
-// Маршруты
+// Подключаем PeerJS по пути /peerjs
 app.use("/peerjs", peerServer);
 
 app.get("/", (req, res) => {
-  res.send("GEO-MIC Server is Running");
+  res.send("GEO-MIC Backend is Online");
 });
 
-// Логика Socket.io
 io.on("connection", (socket) => {
-  console.log("Socket connected:", socket.id);
-  
+  console.log("User connected:", socket.id);
+
   socket.on("join", (data) => {
-    console.log(`User ${data.name} joined`);
+    console.log(`User ${data.name} joined as ${data.role}`);
   });
 
   socket.on("set-zone", (zone) => {
-    socket.broadcast.emit("zone-updated", zone);
+    io.emit("zone-updated", zone);
   });
 
   socket.on("update-coords", (data) => {
     socket.broadcast.emit("participant-moved", { id: socket.id, ...data });
   });
+
+  socket.on("disconnect", () => {
+    io.emit("user-disconnected", socket.id);
+  });
 });
 
+// Запуск
 httpServer.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server listening on port ${PORT}`);
+  console.log(`Server started on port ${PORT}`);
 });
