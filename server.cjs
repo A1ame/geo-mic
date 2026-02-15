@@ -19,20 +19,23 @@ app.use("/peerjs", peerServer);
 let participants = {}; 
 let pendingRequests = {}; 
 
-const broadcastEvents = () => {
-  const activeEvents = Object.values(participants)
+const getActiveEvents = () => {
+  return Object.values(participants)
     .filter(p => p.role === 'admin')
     .map(p => ({ name: p.name, socketId: p.socketId, peerId: p.peerId }));
-  // Рассылаем всем подключенным
-  io.emit("available-events", activeEvents);
+};
+
+const broadcastEvents = () => {
+  io.emit("available-events", getActiveEvents());
 };
 
 io.on("connection", (socket) => {
-  // Сразу при подключении отправляем текущий список событий
-  const activeEvents = Object.values(participants)
-    .filter(p => p.role === 'admin')
-    .map(p => ({ name: p.name, socketId: p.socketId, peerId: p.peerId }));
-  socket.emit("available-events", activeEvents);
+  // Мгновенная отправка списка новому сокету
+  socket.emit("available-events", getActiveEvents());
+
+  socket.on("get-available-events", () => {
+    socket.emit("available-events", getActiveEvents());
+  });
 
   socket.on("join", (data) => {
     participants[socket.id] = { ...data, socketId: socket.id, handRaised: false, isOnAir: false };
@@ -55,7 +58,6 @@ io.on("connection", (socket) => {
       pendingRequests[adminId] = pendingRequests[adminId].filter(r => r.socketId !== userSocketId);
       io.to(adminId).emit("new-request", pendingRequests[adminId]);
     }
-    // Передаем данные админа, чтобы участник знал, к кому он зашел
     io.to(userSocketId).emit("join-approved", { 
         adminName: participants[adminId]?.name,
         adminPeerId: participants[adminId]?.peerId 
@@ -85,12 +87,10 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    if (participants[socket.id]) {
-      delete participants[socket.id];
-      delete pendingRequests[socket.id];
-      broadcastEvents();
-      io.emit("participants-list", Object.values(participants));
-    }
+    delete participants[socket.id];
+    delete pendingRequests[socket.id];
+    broadcastEvents();
+    io.emit("participants-list", Object.values(participants));
   });
 });
 
