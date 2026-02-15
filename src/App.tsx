@@ -19,10 +19,12 @@ const socket: Socket = io(SERVER_URL, {
 const App: React.FC = () => {
   const [role, setRole] = useState<'admin' | 'user' | null>(() => (localStorage.getItem('userRole') as any) || null);
   const [userName, setUserName] = useState(() => localStorage.getItem('userName') || '');
+  const [adminData, setAdminData] = useState({ name: '', peerId: '' });
+  
   const [peerId, setPeerId] = useState<string>('');
   const [isConnected, setIsConnected] = useState(false);
   const [zone, setZone] = useState<{center: [number, number], radius: number} | null>(null);
-  const [isInside, setIsInside] = useState(true); // По умолчанию true, чтобы не мигало окно ошибки
+  const [isInside, setIsInside] = useState(true);
 
   const peerRef = useRef<any>(null);
 
@@ -45,14 +47,8 @@ const App: React.FC = () => {
 
       p.on('open', (id: string) => {
         setPeerId(id);
-        // При входе сразу отправляем текущие координаты, если они есть
         navigator.geolocation.getCurrentPosition((pos) => {
-          socket.emit('join', { 
-            role, 
-            name: userName, 
-            peerId: id, 
-            coords: [pos.coords.latitude, pos.coords.longitude] 
-          });
+          socket.emit('join', { role, name: userName, peerId: id, coords: [pos.coords.latitude, pos.coords.longitude] });
         }, () => {
           socket.emit('join', { role, name: userName, peerId: id });
         });
@@ -73,11 +69,14 @@ const App: React.FC = () => {
       setZone(newZone);
       if (newZone) checkPosition(newZone);
     });
+    // Получаем инфо об админе
+    socket.on('admin-updated', (data) => setAdminData(data));
 
     return () => {
       socket.off('connect');
       socket.off('disconnect');
       socket.off('zone-updated');
+      socket.off('admin-updated');
     };
   }, []);
 
@@ -118,7 +117,14 @@ const App: React.FC = () => {
       {role === 'admin' ? (
         <AdminView socket={socket} peer={peerRef.current} adminName={userName} onExit={handleExit} />
       ) : (
-        <ParticipantView socket={socket} peer={peerRef.current} isInside={isInside} userName={userName} onExit={handleExit} />
+        <ParticipantView 
+          socket={socket} 
+          peer={peerRef.current} 
+          isInside={isInside} 
+          userName={userName} 
+          adminData={adminData} // Передаем инфо об админе
+          onExit={handleExit} 
+        />
       )}
       <div className="fixed bottom-6 left-6 flex gap-4 px-4 py-2 bg-slate-900/90 backdrop-blur-md rounded-2xl border border-white/10 text-[9px] font-black uppercase z-[9999]">
         <div className="flex items-center gap-2">

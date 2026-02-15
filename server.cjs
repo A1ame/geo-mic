@@ -11,6 +11,7 @@ const httpServer = http.createServer(app);
 
 let activeZone = null;
 let participants = {}; 
+let adminInfo = { name: "Ожидание админа...", peerId: null }; // Храним данные админа
 
 const io = new Server(httpServer, {
   cors: { origin: [FRONTEND_URL, "http://localhost:5173"], methods: ["GET", "POST"], credentials: true },
@@ -25,15 +26,20 @@ const peerServer = ExpressPeerServer(httpServer, {
 app.use("/peerjs", peerServer);
 
 io.on("connection", (socket) => {
+  // Сразу отправляем данные о событии новому клиенту
+  socket.emit("admin-updated", adminInfo);
   if (activeZone) socket.emit("zone-updated", activeZone);
 
   socket.on("join", (data) => {
-    // УДАЛЕНИЕ ДУБЛИКАТОВ: ищем участника с таким же именем
+    // Чистим дубликаты
     Object.keys(participants).forEach(id => {
-      if (participants[id].name === data.name && participants[id].role === 'user') {
-        delete participants[id];
-      }
+      if (participants[id].name === data.name) delete participants[id];
     });
+
+    if (data.role === 'admin') {
+      adminInfo = { name: data.name, peerId: data.peerId };
+      io.emit("admin-updated", adminInfo); // Оповещаем всех, что админ (пере)зашел
+    }
 
     participants[socket.id] = { ...data, socketId: socket.id, handRaised: false, isOnAir: false };
     socket.join("main-room");
@@ -83,6 +89,11 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     if (participants[socket.id]) {
+      if (participants[socket.id].role === 'admin') {
+        // Если админ ушел, обнуляем его peerId, но оставляем имя для истории
+        adminInfo.peerId = null;
+        io.emit("admin-updated", adminInfo);
+      }
       delete participants[socket.id];
       io.emit("participants-list", Object.values(participants));
     }
