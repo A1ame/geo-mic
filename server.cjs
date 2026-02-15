@@ -18,34 +18,45 @@ app.use("/peerjs", peerServer);
 
 let participants = {}; 
 let pendingRequests = {}; 
-
-const getActiveEvents = () => {
-  return Object.values(participants)
-    .filter(p => p.role === 'admin')
-    .map(p => ({ name: p.name, socketId: p.socketId, peerId: p.peerId }));
-};
+let activeZone = null; 
 
 const broadcastAll = () => {
-  io.emit("available-events", getActiveEvents());
+  const activeEvents = Object.values(participants)
+    .filter(p => p.role === 'admin')
+    .map(p => ({ name: p.name, socketId: p.socketId, peerId: p.peerId }));
+
+  io.emit("available-events", activeEvents);
   io.emit("participants-list", Object.values(participants));
 };
 
-// МАЯК: Рассылаем события каждые 2 сек, чтобы новые участники видели их сразу
-setInterval(broadcastAll, 2000);
+// Маяк для новых участников
+setInterval(broadcastAll, 3000);
 
 io.on("connection", (socket) => {
+  if (activeZone) socket.emit("zone-updated", activeZone);
+
   socket.on("join", (data) => {
-    // Удаляем старые записи с тем же PeerID (защита от дублей при перезагрузке)
+    // УДАЛЕНИЕ ДУБЛИКАТОВ (по имени или PeerID)
     Object.keys(participants).forEach(id => {
-      if (participants[id].peerId === data.peerId) delete participants[id];
+      if (participants[id].name === data.name || participants[id].peerId === data.peerId) {
+        delete participants[id];
+      }
     });
 
     participants[socket.id] = { ...data, socketId: socket.id, handRaised: false, isOnAir: false };
     broadcastAll();
   });
 
+  socket.on("set-zone", (zone) => {
+    activeZone = zone;
+    io.emit("zone-updated", zone);
+  });
+
   socket.on("request-join", (data) => {
     const { adminSocketId, name, peerId } = data;
+    // Если админа нет в списке участников, игнорируем запрос
+    if (!participants[adminSocketId]) return;
+
     if (!pendingRequests[adminSocketId]) pendingRequests[adminSocketId] = [];
     if (!pendingRequests[adminSocketId].find(r => r.peerId === peerId)) {
       pendingRequests[adminSocketId].push({ name, socketId: socket.id, peerId });
@@ -61,20 +72,22 @@ io.on("connection", (socket) => {
     }
     io.to(userSocketId).emit("join-approved", { 
         adminName: participants[adminId]?.name,
-        adminPeerId: participants[adminId]?.peerId 
+        adminPeerId: participants[adminId]?.peerId,
+        adminSocketId: adminId
     });
   });
 
   socket.on("stop-event", () => {
+    activeZone = null;
+    io.emit("zone-updated", null);
     delete participants[socket.id];
-    delete pendingRequests[socket.id];
     broadcastAll();
   });
 
-  socket.on("raise-hand", () => {
+  socket.on("update-coords", (data) => {
     if (participants[socket.id]) {
-      participants[socket.id].handRaised = true;
-      broadcastAll();
+      participants[socket.id].coords = data.coords;
+      io.emit("participants-list", Object.values(participants));
     }
   });
 
@@ -96,6 +109,7 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     setTimeout(() => {
       if (!io.sockets.sockets.get(socket.id)) {
+        if (participants[socket.id]?.role === 'admin') activeZone = null;
         delete participants[socket.id];
         delete pendingRequests[socket.id];
         broadcastAll();
