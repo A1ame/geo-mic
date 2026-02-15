@@ -28,6 +28,13 @@ io.on("connection", (socket) => {
   if (activeZone) socket.emit("zone-updated", activeZone);
 
   socket.on("join", (data) => {
+    // УДАЛЕНИЕ ДУБЛИКАТОВ: ищем участника с таким же именем
+    Object.keys(participants).forEach(id => {
+      if (participants[id].name === data.name && participants[id].role === 'user') {
+        delete participants[id];
+      }
+    });
+
     participants[socket.id] = { ...data, socketId: socket.id, handRaised: false, isOnAir: false };
     socket.join("main-room");
     io.emit("participants-list", Object.values(participants));
@@ -75,8 +82,10 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    delete participants[socket.id];
-    io.emit("participants-list", Object.values(participants));
+    if (participants[socket.id]) {
+      delete participants[socket.id];
+      io.emit("participants-list", Object.values(participants));
+    }
   });
 });
 

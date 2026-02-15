@@ -17,30 +17,18 @@ const socket: Socket = io(SERVER_URL, {
 });
 
 const App: React.FC = () => {
-  const [role, setRole] = useState<'admin' | 'user' | null>(() => {
-    return (localStorage.getItem('userRole') as 'admin' | 'user') || null;
-  });
-  const [userName, setUserName] = useState(() => {
-    return localStorage.getItem('userName') || '';
-  });
-
+  const [role, setRole] = useState<'admin' | 'user' | null>(() => (localStorage.getItem('userRole') as any) || null);
+  const [userName, setUserName] = useState(() => localStorage.getItem('userName') || '');
   const [peerId, setPeerId] = useState<string>('');
   const [isConnected, setIsConnected] = useState(false);
   const [zone, setZone] = useState<{center: [number, number], radius: number} | null>(null);
-  const [isInside, setIsInside] = useState(false);
+  const [isInside, setIsInside] = useState(true); // По умолчанию true, чтобы не мигало окно ошибки
 
   const peerRef = useRef<any>(null);
 
-  // Глобальный фикс высоты карты
   useEffect(() => {
     const style = document.createElement('style');
-    style.innerHTML = `
-      .leaflet-container { 
-        height: 100% !important; 
-        width: 100% !important; 
-        background: #020617 !important;
-      }
-    `;
+    style.innerHTML = `.leaflet-container { height: 100% !important; width: 100% !important; background: #020617 !important; }`;
     document.head.appendChild(style);
   }, []);
 
@@ -52,13 +40,22 @@ const App: React.FC = () => {
         host: 'geo-mic-production-2da6.up.railway.app',
         port: 443,
         path: '/peerjs',
-        secure: true,
-        debug: 1
+        secure: true
       });
 
       p.on('open', (id: string) => {
         setPeerId(id);
-        socket.emit('join', { role, name: userName, peerId: id });
+        // При входе сразу отправляем текущие координаты, если они есть
+        navigator.geolocation.getCurrentPosition((pos) => {
+          socket.emit('join', { 
+            role, 
+            name: userName, 
+            peerId: id, 
+            coords: [pos.coords.latitude, pos.coords.longitude] 
+          });
+        }, () => {
+          socket.emit('join', { role, name: userName, peerId: id });
+        });
       });
 
       p.on('error', () => setTimeout(initPeer, 5000));
@@ -66,15 +63,16 @@ const App: React.FC = () => {
     };
 
     initPeer();
-    return () => {
-      if (peerRef.current) { peerRef.current.destroy(); peerRef.current = null; }
-    };
+    return () => { if (peerRef.current) peerRef.current.destroy(); };
   }, [role, userName]);
 
   useEffect(() => {
     socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => setIsConnected(false));
-    socket.on('zone-updated', (newZone) => setZone(newZone));
+    socket.on('zone-updated', (newZone) => {
+      setZone(newZone);
+      if (newZone) checkPosition(newZone);
+    });
 
     return () => {
       socket.off('connect');
@@ -83,18 +81,20 @@ const App: React.FC = () => {
     };
   }, []);
 
+  const checkPosition = (targetZone: any) => {
+    navigator.geolocation.getCurrentPosition((pos) => {
+      const dist = Math.sqrt(
+        Math.pow(pos.coords.latitude - targetZone.center[0], 2) + 
+        Math.pow(pos.coords.longitude - targetZone.center[1], 2)
+      ) * 111320;
+      setIsInside(dist <= targetZone.radius);
+      socket.emit('update-coords', { coords: [pos.coords.latitude, pos.coords.longitude] });
+    }, null, { enableHighAccuracy: true });
+  };
+
   useEffect(() => {
     if (!zone) return;
-    const interval = setInterval(() => {
-      navigator.geolocation.getCurrentPosition((pos) => {
-        const dist = Math.sqrt(
-          Math.pow(pos.coords.latitude - zone.center[0], 2) + 
-          Math.pow(pos.coords.longitude - zone.center[1], 2)
-        ) * 111320;
-        setIsInside(dist <= zone.radius);
-        socket.emit('update-coords', { coords: [pos.coords.latitude, pos.coords.longitude] });
-      });
-    }, 5000);
+    const interval = setInterval(() => checkPosition(zone), 5000);
     return () => clearInterval(interval);
   }, [zone]);
 
@@ -120,16 +120,14 @@ const App: React.FC = () => {
       ) : (
         <ParticipantView socket={socket} peer={peerRef.current} isInside={isInside} userName={userName} onExit={handleExit} />
       )}
-
-      {/* Индикаторы */}
-      <div className="fixed bottom-6 left-6 flex gap-4 px-4 py-2 bg-slate-900/90 backdrop-blur-md rounded-2xl border border-white/10 text-[9px] font-black uppercase z-[9999] shadow-2xl tracking-tighter">
+      <div className="fixed bottom-6 left-6 flex gap-4 px-4 py-2 bg-slate-900/90 backdrop-blur-md rounded-2xl border border-white/10 text-[9px] font-black uppercase z-[9999]">
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-full ${peerId ? "bg-green-500" : "bg-yellow-500 animate-pulse"}`}></span>
-          <span className="opacity-70">Voice</span>
+          <span>Voice</span>
         </div>
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500 animate-pulse"}`}></span>
-          <span className="opacity-70">Signal</span>
+          <span>Signal</span>
         </div>
       </div>
     </div>
