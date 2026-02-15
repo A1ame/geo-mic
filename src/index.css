@@ -2,9 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-body, html, #root {
+body {
   margin: 0;
-  padding: 0;
-  height: 100%;
-  background-color: #020617; /* Темно-синий фон slate-950 */
+  background-color: #020617;
 }
