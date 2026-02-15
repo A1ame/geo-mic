@@ -28,12 +28,14 @@ const broadcastAll = () => {
   io.emit("participants-list", Object.values(participants));
 };
 
-// Рассылка списка событий каждые 3 секунды
 setInterval(broadcastAll, 3000);
 
 io.on("connection", (socket) => {
   socket.on("join", (data) => {
-    // Удаляем старую сессию, если она была (при перезагрузке)
+    // Ищем, не был ли этот пользователь в эфире до перезагрузки (по имени)
+    const wasOnAir = Object.values(participants).some(p => p.name === data.name && p.isOnAir);
+    
+    // Удаляем старые записи с тем же именем
     Object.keys(participants).forEach(id => {
       if (participants[id].name === data.name) delete participants[id];
     });
@@ -42,7 +44,8 @@ io.on("connection", (socket) => {
       ...data, 
       socketId: socket.id, 
       handRaised: data.handRaised || false,
-      isOnAir: data.isOnAir || false 
+      // Если он был в эфире до F5, сохраняем этот статус
+      isOnAir: data.isOnAir || wasOnAir 
     };
     broadcastAll();
   });
@@ -50,8 +53,6 @@ io.on("connection", (socket) => {
   socket.on("request-join", (data) => {
     const { adminSocketId, name, peerId } = data;
     if (!pendingRequests[adminSocketId]) pendingRequests[adminSocketId] = [];
-    
-    // Проверка, чтобы не дублировать заявки
     if (!pendingRequests[adminSocketId].find(r => r.peerId === peerId)) {
       pendingRequests[adminSocketId].push({ name, socketId: socket.id, peerId });
     }
@@ -91,15 +92,20 @@ io.on("connection", (socket) => {
   socket.on("revoke-mic", (data) => {
     if (participants[data.socketId]) {
       participants[data.socketId].isOnAir = false;
-      participants[data.socketId].handRaised = false;
     }
     io.emit("mic-revoked", data);
     broadcastAll();
   });
 
   socket.on("disconnect", () => {
-    delete participants[socket.id];
-    broadcastAll();
+    // Даем небольшую задержку на случай быстрой перезагрузки
+    const sid = socket.id;
+    setTimeout(() => {
+        if (!io.sockets.sockets.get(sid)) {
+            delete participants[sid];
+            broadcastAll();
+        }
+    }, 2000);
   });
 });
 

@@ -19,8 +19,18 @@ const ParticipantView = ({ socket, peer, userName, onExit }: any) => {
   }, [status]);
 
   useEffect(() => {
-    // Получаем список доступных событий
-    socket.on('available-events', (admins: any[]) => setAvailableAdmins(admins));
+    socket.on('available-events', (admins: any[]) => {
+        setAvailableAdmins(admins);
+        // Если мы уже одобрены, ищем нашего админа в списке (вдруг его Peer ID изменился после перезагрузки)
+        if (isApproved && activeAdminData) {
+            const currentAdmin = admins.find(a => a.name === activeAdminData.adminName);
+            if (currentAdmin && currentAdmin.peerId !== activeAdminData.adminPeerId) {
+                const newData = { ...activeAdminData, adminPeerId: currentAdmin.peerId };
+                setActiveAdminData(newData);
+                localStorage.setItem('activeAdmin', JSON.stringify(newData));
+            }
+        }
+    });
 
     if (isApproved && peer) {
       socket.emit('join', { 
@@ -58,9 +68,9 @@ const ParticipantView = ({ socket, peer, userName, onExit }: any) => {
       socket.off('mic-granted');
       socket.off('mic-revoked');
     };
-  }, [peer, isApproved]);
+  }, [peer, isApproved, activeAdminData?.adminPeerId]);
 
-  // Переподключение при смене ID админа (его перезагрузке)
+  // Следим за изменением ID админа: если он обновился, а мы в эфире — перезваниваем автоматически
   useEffect(() => {
     if (status === 'on-air' && activeAdminData?.adminPeerId && peer) {
         startStreaming(activeAdminData.adminPeerId);
@@ -96,57 +106,39 @@ const ParticipantView = ({ socket, peer, userName, onExit }: any) => {
     if (streamRef.current) streamRef.current.getAudioTracks()[0].enabled = !nextMuted;
   };
 
-  // ЭКРАН 1: Выбор события
   if (!activeAdminData) {
     return (
-      <div className="h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-white">
-        <h2 className="text-2xl font-black uppercase mb-8 italic tracking-tighter text-indigo-500">Доступные события</h2>
+      <div className="h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-white text-center">
+        <h2 className="text-2xl font-black uppercase mb-8 text-indigo-500">Доступные события</h2>
         <div className="w-full max-w-sm space-y-4">
-          {availableAdmins.length === 0 ? (
-            <p className="text-center text-slate-500 animate-pulse">Поиск активных зон...</p>
-          ) : (
-            availableAdmins.map(admin => (
-              <button
-                key={admin.socketId}
-                onClick={() => socket.emit('request-join', { adminSocketId: admin.socketId, name: userName, peerId: peer?.id })}
-                className="w-full p-6 bg-white/5 border border-white/10 rounded-3xl flex justify-between items-center hover:bg-white/10 transition-all group"
-              >
-                <div className="text-left">
-                  <p className="text-[10px] font-black uppercase text-indigo-400">Администратор</p>
-                  <p className="font-bold text-lg">{admin.name}</p>
-                </div>
-                <Users className="text-slate-600 group-hover:text-indigo-500 transition-colors" />
-              </button>
-            ))
-          )}
+          {availableAdmins.map(admin => (
+            <button key={admin.socketId} onClick={() => socket.emit('request-join', { adminSocketId: admin.socketId, name: userName, peerId: peer?.id })} className="w-full p-6 bg-white/5 border border-white/10 rounded-3xl flex justify-between items-center hover:bg-white/10 transition-all">
+              <div className="text-left">
+                <p className="text-[10px] font-black uppercase text-indigo-400">Админ</p>
+                <p className="font-bold text-lg">{admin.name}</p>
+              </div>
+              <Users className="text-slate-600" />
+            </button>
+          ))}
         </div>
-        <button onClick={onExit} className="mt-10 text-slate-500 text-[10px] font-black uppercase">Назад</button>
       </div>
     );
   }
 
-  // ЭКРАН 2: Ожидание одобрения
   if (!isApproved) {
     return (
       <div className="h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-white text-center">
-        <div className="w-20 h-20 bg-indigo-600 rounded-full flex items-center justify-center animate-bounce mb-6">
-          <ShieldCheck size={40} />
-        </div>
+        <div className="w-20 h-20 bg-indigo-600 rounded-full flex items-center justify-center animate-bounce mb-6"><ShieldCheck size={40} /></div>
         <h2 className="text-xl font-bold mb-2">Запрос отправлен</h2>
-        <p className="text-slate-400 text-sm">Ожидайте, пока <b>{activeAdminData.adminName}</b> подтвердит ваш вход</p>
-        <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="mt-8 text-[10px] font-black uppercase text-red-500">Отменить</button>
+        <p className="text-slate-400 text-sm">Ожидайте подтверждения от <b>{activeAdminData.adminName}</b></p>
       </div>
     );
   }
 
-  // ЭКРАН 3: Основной интерфейс
   return (
     <div className="h-screen bg-slate-950 flex flex-col items-center justify-between p-10 text-white">
       <div className="w-full max-w-md bg-white/5 p-4 rounded-3xl border border-white/10 flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          <ShieldCheck className="text-indigo-500"/>
-          <span className="font-bold">{activeAdminData?.adminName}</span>
-        </div>
+        <div className="flex items-center gap-3"><ShieldCheck className="text-indigo-500"/><span className="font-bold">{activeAdminData?.adminName}</span></div>
         <button onClick={onExit} className="text-red-500 p-2"><LogOut size={20}/></button>
       </div>
 
@@ -171,8 +163,7 @@ const ParticipantView = ({ socket, peer, userName, onExit }: any) => {
           </button>
         )}
       </div>
-
-      <div className="text-[10px] font-black uppercase tracking-[0.3em] opacity-20">Geo-Mic Protocol</div>
+      <div className="opacity-10 text-[10px] font-black uppercase tracking-[0.5em]">Geo-Mic protocol active</div>
     </div>
   );
 };

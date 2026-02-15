@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Circle } from 'react-leaflet';
-import { Radio, Check, LogOut, Settings2, Users } from 'lucide-react';
+import { Radio, Check, LogOut, Users } from 'lucide-react';
 
 const AdminView = ({ socket, peer, adminName, onExit }: any) => {
   const [coords, setCoords] = useState<[number, number] | null>(null);
-  const [radius, setRadius] = useState(() => Number(localStorage.getItem('adminRadius')) || 100);
   const [participants, setParticipants] = useState<any[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -26,19 +25,36 @@ const AdminView = ({ socket, peer, adminName, onExit }: any) => {
       });
     }
 
-    socket.on('participants-list', (list: any[]) => setParticipants(list.filter(p => p.role === 'user')));
+    socket.on('participants-list', (list: any[]) => {
+        setParticipants(list.filter(p => p.role === 'user'));
+    });
+    
     socket.on('new-request', (reqList: any[]) => setRequests(reqList));
 
-    return () => { socket.off('participants-list'); socket.off('new-request'); };
+    return () => { 
+        socket.off('participants-list'); 
+        socket.off('new-request'); 
+    };
   }, [peer]);
+
+  const handleMicControl = (p: any) => {
+    if (p.isOnAir) {
+      socket.emit('revoke-mic', { socketId: p.socketId });
+    } else {
+      socket.emit('give-mic', { 
+        socketId: p.socketId, 
+        adminPeerId: peer.id, 
+        targetPeerId: p.peerId 
+      });
+    }
+  };
 
   return (
     <div className="flex h-screen bg-slate-950 text-white overflow-hidden">
       <audio ref={audioRef} hidden />
-      
       <div className="w-80 bg-slate-900 border-r border-white/10 flex flex-col z-[1000]">
         <div className="p-6 border-b border-white/10 flex justify-between items-center">
-          <h2 className="font-black italic flex items-center gap-2 text-indigo-500 uppercase tracking-tighter">
+          <h2 className="font-black italic flex items-center gap-2 text-indigo-500 uppercase">
             <Radio size={20}/> Geo-Mic Admin
           </h2>
           <button onClick={onExit} className="p-2 text-slate-500 hover:text-red-500 transition-colors">
@@ -47,41 +63,32 @@ const AdminView = ({ socket, peer, adminName, onExit }: any) => {
         </div>
 
         <div className="flex-grow overflow-y-auto p-4 space-y-6">
-          {/* Блок заявок на вход */}
           {requests.length > 0 && (
             <div className="space-y-2">
-              <p className="text-[10px] font-black uppercase text-amber-400 flex items-center gap-2">
-                <Users size={12}/> Заявки на вход ({requests.length})
-              </p>
+              <p className="text-[10px] font-black uppercase text-amber-400">Заявки ({requests.length})</p>
               {requests.map(req => (
                 <div key={req.socketId} className="flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/10">
                   <span className="text-sm font-bold truncate max-w-[120px]">{req.name}</span>
-                  <button 
-                    onClick={() => socket.emit('approve-user', req.socketId)} 
-                    className="p-2 bg-green-500 hover:bg-green-600 rounded-lg transition-all"
-                  >
-                    <Check size={14}/>
-                  </button>
+                  <button onClick={() => socket.emit('approve-user', req.socketId)} className="p-2 bg-green-500 rounded-lg"><Check size={14}/></button>
                 </div>
               ))}
             </div>
           )}
 
-          {/* Блок участников */}
           <div className="space-y-2">
-            <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Участники в зоне</p>
+            <p className="text-[10px] font-black uppercase text-slate-500">Участники</p>
             {participants.map(p => (
               <div key={p.socketId} className={`p-4 rounded-2xl border transition-all ${p.handRaised ? 'bg-indigo-600/20 border-indigo-500 animate-pulse' : 'bg-white/5 border-white/5'}`}>
                 <div className="flex justify-between items-center">
                   <div className="flex flex-col">
                     <span className="font-bold text-sm truncate max-w-[120px]">{p.name}</span>
-                    {p.handRaised && <span className="text-[10px] text-indigo-400 font-black">✋ ПРОСИТ МИКРОФОН</span>}
+                    {p.handRaised && <span className="text-[10px] text-indigo-400 font-black">✋ ПРОСИТ МИК</span>}
                   </div>
                   <button 
-                    onClick={() => socket.emit(p.isOnAir ? 'revoke-mic' : 'give-mic', { socketId: p.socketId, adminPeerId: peer.id, targetPeerId: p.peerId })}
-                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${p.isOnAir ? 'bg-red-500 shadow-lg shadow-red-500/20' : 'bg-indigo-600 shadow-lg shadow-indigo-500/20'}`}
+                    onClick={() => handleMicControl(p)}
+                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${p.isOnAir ? 'bg-red-500' : 'bg-indigo-600'}`}
                   >
-                    {p.isOnAir ? 'Mute' : 'Mic'}
+                    {p.isOnAir ? 'В ЭФИРЕ' : 'ВКЛ МИК'}
                   </button>
                 </div>
               </div>
@@ -94,7 +101,7 @@ const AdminView = ({ socket, peer, adminName, onExit }: any) => {
         {coords && (
           <MapContainer center={coords} zoom={15} className="h-full w-full grayscale-[0.3]">
             <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
-            <Circle center={coords} radius={radius} pathOptions={{ color: '#6366f1', fillColor: '#6366f1', fillOpacity: 0.1 }} />
+            <Circle center={coords} radius={100} pathOptions={{ color: '#6366f1', fillOpacity: 0.1 }} />
           </MapContainer>
         )}
       </div>
