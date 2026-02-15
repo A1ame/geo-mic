@@ -19,7 +19,7 @@ const socket: Socket = io(SERVER_URL, {
 const App: React.FC = () => {
   const [role, setRole] = useState<'admin' | 'user' | null>(() => (localStorage.getItem('userRole') as any) || null);
   const [userName, setUserName] = useState(() => localStorage.getItem('userName') || '');
-  const [adminData, setAdminData] = useState({ name: '', peerId: '' });
+  const [adminData, setAdminData] = useState({ name: '', peerId: '', socketId: '' });
   
   const [peerId, setPeerId] = useState<string>('');
   const [isConnected, setIsConnected] = useState(false);
@@ -47,11 +47,16 @@ const App: React.FC = () => {
 
       p.on('open', (id: string) => {
         setPeerId(id);
-        navigator.geolocation.getCurrentPosition((pos) => {
-          socket.emit('join', { role, name: userName, peerId: id, coords: [pos.coords.latitude, pos.coords.longitude] });
-        }, () => {
-          socket.emit('join', { role, name: userName, peerId: id });
-        });
+        
+        // Если это админ — он заходит сразу
+        // Если юзер — App.tsx просто открывает ParticipantView, 
+        // а там уже проверяется localStorage 'approved'
+        if (role === 'admin') {
+            socket.emit('join', { role, name: userName, peerId: id });
+        } else if (localStorage.getItem('approved') === 'true') {
+            // Если уже был одобрен ранее (до перезагрузки)
+            socket.emit('join', { role, name: userName, peerId: id });
+        }
       });
 
       p.on('error', () => setTimeout(initPeer, 5000));
@@ -65,12 +70,15 @@ const App: React.FC = () => {
   useEffect(() => {
     socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => setIsConnected(false));
+    
     socket.on('zone-updated', (newZone) => {
       setZone(newZone);
       if (newZone) checkPosition(newZone);
     });
-    // Получаем инфо об админе
-    socket.on('admin-updated', (data) => setAdminData(data));
+
+    socket.on('admin-updated', (data) => {
+      setAdminData(data);
+    });
 
     return () => {
       socket.off('connect');
@@ -87,6 +95,7 @@ const App: React.FC = () => {
         Math.pow(pos.coords.longitude - targetZone.center[1], 2)
       ) * 111320;
       setIsInside(dist <= targetZone.radius);
+      // Отправляем координаты только если мы в эфире или в зоне
       socket.emit('update-coords', { coords: [pos.coords.latitude, pos.coords.longitude] });
     }, null, { enableHighAccuracy: true });
   };
@@ -115,24 +124,31 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden">
       {role === 'admin' ? (
-        <AdminView socket={socket} peer={peerRef.current} adminName={userName} onExit={handleExit} />
+        <AdminView 
+            socket={socket} 
+            peer={peerRef.current} 
+            adminName={userName} 
+            onExit={handleExit} 
+        />
       ) : (
         <ParticipantView 
           socket={socket} 
           peer={peerRef.current} 
           isInside={isInside} 
           userName={userName} 
-          adminData={adminData} // Передаем инфо об админе
+          adminData={adminData} 
           onExit={handleExit} 
         />
       )}
+      
+      {/* HUD Индикаторы */}
       <div className="fixed bottom-6 left-6 flex gap-4 px-4 py-2 bg-slate-900/90 backdrop-blur-md rounded-2xl border border-white/10 text-[9px] font-black uppercase z-[9999]">
         <div className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full ${peerId ? "bg-green-500" : "bg-yellow-500 animate-pulse"}`}></span>
+          <span className={`w-2 h-2 rounded-full ${peerId ? "bg-green-500 shadow-[0_0_8px_#22c55e]" : "bg-yellow-500 animate-pulse"}`}></span>
           <span>Voice</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500 animate-pulse"}`}></span>
+          <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-green-500 shadow-[0_0_8px_#22c55e]" : "bg-red-500 animate-pulse"}`}></span>
           <span>Signal</span>
         </div>
       </div>
