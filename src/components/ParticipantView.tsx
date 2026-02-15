@@ -58,7 +58,7 @@ const ParticipantView = ({ socket, peer, isInside, userName }: any) => {
 
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-slate-950 p-8 text-center space-y-12">
-      {/* Indicator Ring */}
+      {/* Indicator Ringergfdgdfggf */}
       <div className="relative group">
         <div className={`absolute inset-0 rounded-full transition-all duration-1000 blur-3xl ${
           status === 'on-air' ? 'bg-red-500/40 opacity-100' : 'bg-indigo-500/20 opacity-0'
