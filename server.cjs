@@ -23,12 +23,16 @@ const broadcastEvents = () => {
   const activeEvents = Object.values(participants)
     .filter(p => p.role === 'admin')
     .map(p => ({ name: p.name, socketId: p.socketId, peerId: p.peerId }));
+  // Рассылаем всем подключенным
   io.emit("available-events", activeEvents);
 };
 
 io.on("connection", (socket) => {
-  // Исправление: отправляем список событий сразу при входе
-  broadcastEvents();
+  // Сразу при подключении отправляем текущий список событий
+  const activeEvents = Object.values(participants)
+    .filter(p => p.role === 'admin')
+    .map(p => ({ name: p.name, socketId: p.socketId, peerId: p.peerId }));
+  socket.emit("available-events", activeEvents);
 
   socket.on("join", (data) => {
     participants[socket.id] = { ...data, socketId: socket.id, handRaised: false, isOnAir: false };
@@ -46,11 +50,23 @@ io.on("connection", (socket) => {
   });
 
   socket.on("approve-user", (userSocketId) => {
-    if (pendingRequests[socket.id]) {
-      pendingRequests[socket.id] = pendingRequests[socket.id].filter(r => r.socketId !== userSocketId);
-      io.to(socket.id).emit("new-request", pendingRequests[socket.id]);
+    const adminId = socket.id;
+    if (pendingRequests[adminId]) {
+      pendingRequests[adminId] = pendingRequests[adminId].filter(r => r.socketId !== userSocketId);
+      io.to(adminId).emit("new-request", pendingRequests[adminId]);
     }
-    io.to(userSocketId).emit("join-approved", { adminSocketId: socket.id });
+    // Передаем данные админа, чтобы участник знал, к кому он зашел
+    io.to(userSocketId).emit("join-approved", { 
+        adminName: participants[adminId]?.name,
+        adminPeerId: participants[adminId]?.peerId 
+    });
+  });
+
+  socket.on("raise-hand", () => {
+    if (participants[socket.id]) {
+      participants[socket.id].handRaised = true;
+      io.emit("participants-list", Object.values(participants));
+    }
   });
 
   socket.on("give-mic", (data) => {
@@ -69,10 +85,12 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    delete participants[socket.id];
-    delete pendingRequests[socket.id];
-    broadcastEvents();
-    io.emit("participants-list", Object.values(participants));
+    if (participants[socket.id]) {
+      delete participants[socket.id];
+      delete pendingRequests[socket.id];
+      broadcastEvents();
+      io.emit("participants-list", Object.values(participants));
+    }
   });
 });
 
