@@ -1,6 +1,6 @@
+import L from 'leaflet';
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import L from 'leaflet'; // Важно для расчета дистанции
 import 'leaflet/dist/leaflet.css';
 
 import AdminView from './components/AdminView';
