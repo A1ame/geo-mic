@@ -28,19 +28,19 @@ const broadcastAll = () => {
   io.emit("participants-list", Object.values(participants));
 };
 
-// Регулярная синхронизация
-setInterval(broadcastAll, 3000);
-
 io.on("connection", (socket) => {
   socket.on("join", (data) => {
-    // Чистим старые сессии того же пользователя
+    // Удаляем старые записи с тем же именем для предотвращения дублей при перезагрузке
     Object.keys(participants).forEach(id => {
-      if (participants[id].name === data.name || participants[id].peerId === data.peerId) {
-        delete participants[id];
-      }
+      if (participants[id].name === data.name) delete participants[id];
     });
 
-    participants[socket.id] = { ...data, socketId: socket.id, handRaised: data.handRaised || false };
+    participants[socket.id] = { 
+      ...data, 
+      socketId: socket.id, 
+      handRaised: data.handRaised || false,
+      isOnAir: data.isOnAir || false 
+    };
     broadcastAll();
   });
 
@@ -48,7 +48,7 @@ io.on("connection", (socket) => {
     if (participants[socket.id]) {
       participants[socket.id].handRaised = true;
       participants[socket.id].isOnAir = false;
-      broadcastAll(); // Админ сразу увидит руку
+      broadcastAll();
     }
   });
 
@@ -72,8 +72,6 @@ io.on("connection", (socket) => {
 
   socket.on("request-join", (data) => {
     const { adminSocketId, name, peerId } = data;
-    if (!participants[adminSocketId]) return;
-
     if (!pendingRequests[adminSocketId]) pendingRequests[adminSocketId] = [];
     if (!pendingRequests[adminSocketId].find(r => r.peerId === peerId)) {
       pendingRequests[adminSocketId].push({ name, socketId: socket.id, peerId });
