@@ -18,7 +18,6 @@ app.use("/peerjs", peerServer);
 
 let participants = {}; 
 let pendingRequests = {}; 
-let activeZone = null; 
 
 const broadcastAll = () => {
   const activeEvents = Object.values(participants)
@@ -29,32 +28,50 @@ const broadcastAll = () => {
   io.emit("participants-list", Object.values(participants));
 };
 
-// Маяк для новых участников
+// Регулярная синхронизация
 setInterval(broadcastAll, 3000);
 
 io.on("connection", (socket) => {
-  if (activeZone) socket.emit("zone-updated", activeZone);
-
   socket.on("join", (data) => {
-    // УДАЛЕНИЕ ДУБЛИКАТОВ (по имени или PeerID)
+    // Чистим старые сессии того же пользователя
     Object.keys(participants).forEach(id => {
       if (participants[id].name === data.name || participants[id].peerId === data.peerId) {
         delete participants[id];
       }
     });
 
-    participants[socket.id] = { ...data, socketId: socket.id, handRaised: false, isOnAir: false };
+    participants[socket.id] = { ...data, socketId: socket.id, handRaised: data.handRaised || false };
     broadcastAll();
   });
 
-  socket.on("set-zone", (zone) => {
-    activeZone = zone;
-    io.emit("zone-updated", zone);
+  socket.on("raise-hand", () => {
+    if (participants[socket.id]) {
+      participants[socket.id].handRaised = true;
+      participants[socket.id].isOnAir = false;
+      broadcastAll(); // Админ сразу увидит руку
+    }
+  });
+
+  socket.on("give-mic", (data) => {
+    if (participants[data.socketId]) {
+      participants[data.socketId].isOnAir = true;
+      participants[data.socketId].handRaised = false;
+    }
+    io.emit("mic-granted", data);
+    broadcastAll();
+  });
+
+  socket.on("revoke-mic", (data) => {
+    if (participants[data.socketId]) {
+      participants[data.socketId].isOnAir = false;
+      participants[data.socketId].handRaised = false;
+    }
+    io.emit("mic-revoked", data);
+    broadcastAll();
   });
 
   socket.on("request-join", (data) => {
     const { adminSocketId, name, peerId } = data;
-    // Если админа нет в списке участников, игнорируем запрос
     if (!participants[adminSocketId]) return;
 
     if (!pendingRequests[adminSocketId]) pendingRequests[adminSocketId] = [];
@@ -77,44 +94,9 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("stop-event", () => {
-    activeZone = null;
-    io.emit("zone-updated", null);
+  socket.on("disconnect", () => {
     delete participants[socket.id];
     broadcastAll();
-  });
-
-  socket.on("update-coords", (data) => {
-    if (participants[socket.id]) {
-      participants[socket.id].coords = data.coords;
-      io.emit("participants-list", Object.values(participants));
-    }
-  });
-
-  socket.on("give-mic", (data) => {
-    if (participants[data.socketId]) {
-      participants[data.socketId].isOnAir = true;
-      participants[data.socketId].handRaised = false;
-    }
-    io.emit("mic-granted", data);
-    broadcastAll();
-  });
-
-  socket.on("revoke-mic", (data) => {
-    if (participants[data.socketId]) participants[data.socketId].isOnAir = false;
-    io.emit("mic-revoked", data);
-    broadcastAll();
-  });
-
-  socket.on("disconnect", () => {
-    setTimeout(() => {
-      if (!io.sockets.sockets.get(socket.id)) {
-        if (participants[socket.id]?.role === 'admin') activeZone = null;
-        delete participants[socket.id];
-        delete pendingRequests[socket.id];
-        broadcastAll();
-      }
-    }, 3000);
   });
 });
 
