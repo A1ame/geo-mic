@@ -4,10 +4,10 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Radio, Mic, Users, Settings2 } from 'lucide-react';
 
-// Исправление иконок Leaflet
+// Фикс иконок Leaflet для Webpack/Vite
 // @ts-ignore
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
+const DefaultIcon = L.Icon.Default;
+DefaultIcon.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
@@ -79,7 +79,7 @@ const AdminView = ({ socket, peer, adminName }: { socket: any, peer: any, adminN
             <Mic size={20} />
           </div>
           <div>
-            <h2 className="text-lg font-black uppercase tracking-tighter leading-none mb-1">Control Panel</h2>
+            <h2 className="text-lg font-black uppercase tracking-tighter leading-none mb-1 text-white">Control Panel</h2>
             <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest italic opacity-60">{adminName}</p>
           </div>
         </div>
@@ -141,7 +141,11 @@ const AdminView = ({ socket, peer, adminName }: { socket: any, peer: any, adminN
             <div key={p.id} className="flex items-center justify-between p-5 bg-white/5 rounded-3xl border border-white/5 hover:bg-white/10 transition-all group">
               <span className="text-lg font-bold tracking-tight text-slate-200">{p.name}</span>
               <button 
-                onClick={() => socket.emit('give-mic', { targetPeerId: p.peerId, adminPeerId: peer.id })}
+                onClick={() => {
+                  if (peer?.id) {
+                    socket.emit('give-mic', { targetPeerId: p.peerId, adminPeerId: peer.id });
+                  }
+                }}
                 className="bg-indigo-600 hover:bg-indigo-500 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/20 transition-all"
               >
                 Дать слово
