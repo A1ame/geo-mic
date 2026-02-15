@@ -18,13 +18,17 @@ const io = new Server(httpServer, {
 });
 
 const peerServer = ExpressPeerServer(httpServer, {
-  debug: true, path: "/", proxied: true, allow_discovery: true,
+  debug: true,
+  path: "/",
+  proxied: true,
+  allow_discovery: true,
   corsOptions: { origin: FRONTEND_URL, methods: ["GET", "POST"] }
 });
 
 app.use("/peerjs", peerServer);
 
 io.on("connection", (socket) => {
+  // При входе отправляем текущую зону
   if (activeZone) socket.emit("zone-updated", activeZone);
 
   socket.on("join", (data) => {
@@ -50,7 +54,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("raise-hand", () => {
+  socket.on("raise-hand", (data) => {
     if (participants[socket.id]) {
       participants[socket.id].handRaised = true;
       io.emit("participants-list", Object.values(participants));
@@ -58,20 +62,12 @@ io.on("connection", (socket) => {
   });
 
   socket.on("give-mic", (data) => {
-    if (participants[data.socketId]) {
-      participants[data.socketId].isOnAir = true;
-      participants[data.socketId].handRaised = false;
-    }
     io.emit("mic-granted", data);
-    io.emit("participants-list", Object.values(participants));
   });
 
   socket.on("revoke-mic", (data) => {
-    if (participants[data.socketId]) {
-      participants[data.socketId].isOnAir = false;
-    }
+    if (participants[data.socketId]) participants[data.socketId].isOnAir = false;
     io.emit("mic-revoked", data);
-    io.emit("participants-list", Object.values(participants));
   });
 
   socket.on("disconnect", () => {
