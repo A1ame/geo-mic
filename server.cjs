@@ -32,10 +32,9 @@ setInterval(broadcastAll, 3000);
 
 io.on("connection", (socket) => {
   socket.on("join", (data) => {
-    // Ищем, не был ли этот пользователь в эфире до перезагрузки (по имени)
+    // Сохраняем статус isOnAir, если пользователь перезагрузился
     const wasOnAir = Object.values(participants).some(p => p.name === data.name && p.isOnAir);
     
-    // Удаляем старые записи с тем же именем
     Object.keys(participants).forEach(id => {
       if (participants[id].name === data.name) delete participants[id];
     });
@@ -44,19 +43,18 @@ io.on("connection", (socket) => {
       ...data, 
       socketId: socket.id, 
       handRaised: data.handRaised || false,
-      // Если он был в эфире до F5, сохраняем этот статус
       isOnAir: data.isOnAir || wasOnAir 
     };
     broadcastAll();
   });
 
-  socket.on("request-join", (data) => {
-    const { adminSocketId, name, peerId } = data;
-    if (!pendingRequests[adminSocketId]) pendingRequests[adminSocketId] = [];
-    if (!pendingRequests[adminSocketId].find(r => r.peerId === peerId)) {
-      pendingRequests[adminSocketId].push({ name, socketId: socket.id, peerId });
-    }
-    io.to(adminSocketId).emit("new-request", pendingRequests[adminSocketId]);
+  socket.on("admin-exit", () => {
+    const adminId = socket.id;
+    // Оповещаем всех участников, которые были подключены к этому админу
+    io.emit("event-ended", { adminSocketId: adminId });
+    delete participants[adminId];
+    delete pendingRequests[adminId];
+    broadcastAll();
   });
 
   socket.on("approve-user", (userSocketId) => {
@@ -70,14 +68,6 @@ io.on("connection", (socket) => {
         adminPeerId: participants[adminId]?.peerId,
         adminSocketId: adminId
     });
-  });
-
-  socket.on("raise-hand", () => {
-    if (participants[socket.id]) {
-      participants[socket.id].handRaised = true;
-      participants[socket.id].isOnAir = false;
-      broadcastAll();
-    }
   });
 
   socket.on("give-mic", (data) => {
@@ -98,14 +88,30 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    // Даем небольшую задержку на случай быстрой перезагрузки
-    const sid = socket.id;
-    setTimeout(() => {
-        if (!io.sockets.sockets.get(sid)) {
-            delete participants[sid];
-            broadcastAll();
-        }
-    }, 2000);
+    const p = participants[socket.id];
+    if (p && p.role === 'admin') {
+        io.emit("event-ended", { adminSocketId: socket.id });
+    }
+    delete participants[socket.id];
+    broadcastAll();
+  });
+
+  // Остальные базовые события (request-join, raise-hand) остаются без изменений
+  socket.on("request-join", (data) => {
+    const { adminSocketId, name, peerId } = data;
+    if (!pendingRequests[adminSocketId]) pendingRequests[adminSocketId] = [];
+    if (!pendingRequests[adminSocketId].find(r => r.peerId === peerId)) {
+      pendingRequests[adminSocketId].push({ name, socketId: socket.id, peerId });
+    }
+    io.to(adminSocketId).emit("new-request", pendingRequests[adminSocketId]);
+  });
+
+  socket.on("raise-hand", () => {
+    if (participants[socket.id]) {
+      participants[socket.id].handRaised = true;
+      participants[socket.id].isOnAir = false;
+      broadcastAll();
+    }
   });
 });
 

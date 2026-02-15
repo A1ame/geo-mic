@@ -25,10 +25,7 @@ const AdminView = ({ socket, peer, adminName, onExit }: any) => {
       });
     }
 
-    socket.on('participants-list', (list: any[]) => {
-        setParticipants(list.filter(p => p.role === 'user'));
-    });
-    
+    socket.on('participants-list', (list: any[]) => setParticipants(list.filter(p => p.role === 'user')));
     socket.on('new-request', (reqList: any[]) => setRequests(reqList));
 
     return () => { 
@@ -37,27 +34,20 @@ const AdminView = ({ socket, peer, adminName, onExit }: any) => {
     };
   }, [peer]);
 
-  const handleMicControl = (p: any) => {
-    if (p.isOnAir) {
-      socket.emit('revoke-mic', { socketId: p.socketId });
-    } else {
-      socket.emit('give-mic', { 
-        socketId: p.socketId, 
-        adminPeerId: peer.id, 
-        targetPeerId: p.peerId 
-      });
-    }
+  const handleAdminExit = () => {
+    socket.emit('admin-exit'); // Уведомляем участников
+    onExit();
   };
 
   return (
     <div className="flex h-screen bg-slate-950 text-white overflow-hidden">
-      <audio ref={audioRef} hidden />
+      <audio ref={audioRef} hidden autoPlay />
       <div className="w-80 bg-slate-900 border-r border-white/10 flex flex-col z-[1000]">
         <div className="p-6 border-b border-white/10 flex justify-between items-center">
           <h2 className="font-black italic flex items-center gap-2 text-indigo-500 uppercase">
             <Radio size={20}/> Geo-Mic Admin
           </h2>
-          <button onClick={onExit} className="p-2 text-slate-500 hover:text-red-500 transition-colors">
+          <button onClick={handleAdminExit} className="p-2 text-slate-500 hover:text-red-500 transition-colors">
             <LogOut size={20}/>
           </button>
         </div>
@@ -85,7 +75,7 @@ const AdminView = ({ socket, peer, adminName, onExit }: any) => {
                     {p.handRaised && <span className="text-[10px] text-indigo-400 font-black">✋ ПРОСИТ МИК</span>}
                   </div>
                   <button 
-                    onClick={() => handleMicControl(p)}
+                    onClick={() => socket.emit(p.isOnAir ? 'revoke-mic' : 'give-mic', { socketId: p.socketId, adminPeerId: peer.id, targetPeerId: p.peerId })}
                     className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${p.isOnAir ? 'bg-red-500' : 'bg-indigo-600'}`}
                   >
                     {p.isOnAir ? 'В ЭФИРЕ' : 'ВКЛ МИК'}
