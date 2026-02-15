@@ -25,12 +25,12 @@ const getActiveEvents = () => {
     .map(p => ({ name: p.name, socketId: p.socketId, peerId: p.peerId }));
 };
 
-const broadcastEvents = () => {
-  io.emit("available-events", getActiveEvents());
+const broadcastParticipants = () => {
+  io.emit("participants-list", Object.values(participants));
 };
 
 io.on("connection", (socket) => {
-  // Мгновенная отправка списка новому сокету
+  // При подключении отдаем текущие события
   socket.emit("available-events", getActiveEvents());
 
   socket.on("get-available-events", () => {
@@ -38,9 +38,16 @@ io.on("connection", (socket) => {
   });
 
   socket.on("join", (data) => {
+    // Если этот пользователь (по PeerID) уже был, удаляем старую запись сокета
+    Object.keys(participants).forEach(id => {
+      if (participants[id].peerId === data.peerId) delete participants[id];
+    });
+
     participants[socket.id] = { ...data, socketId: socket.id, handRaised: false, isOnAir: false };
-    broadcastEvents();
-    io.emit("participants-list", Object.values(participants));
+    
+    // Рассылаем обновленные данные всем
+    io.emit("available-events", getActiveEvents());
+    broadcastParticipants();
   });
 
   socket.on("request-join", (data) => {
@@ -58,6 +65,7 @@ io.on("connection", (socket) => {
       pendingRequests[adminId] = pendingRequests[adminId].filter(r => r.socketId !== userSocketId);
       io.to(adminId).emit("new-request", pendingRequests[adminId]);
     }
+    // Отправляем одобрение участнику
     io.to(userSocketId).emit("join-approved", { 
         adminName: participants[adminId]?.name,
         adminPeerId: participants[adminId]?.peerId 
@@ -67,7 +75,7 @@ io.on("connection", (socket) => {
   socket.on("raise-hand", () => {
     if (participants[socket.id]) {
       participants[socket.id].handRaised = true;
-      io.emit("participants-list", Object.values(participants));
+      broadcastParticipants();
     }
   });
 
@@ -77,20 +85,25 @@ io.on("connection", (socket) => {
       participants[data.socketId].handRaised = false;
     }
     io.emit("mic-granted", data);
-    io.emit("participants-list", Object.values(participants));
+    broadcastParticipants();
   });
 
   socket.on("revoke-mic", (data) => {
     if (participants[data.socketId]) participants[data.socketId].isOnAir = false;
     io.emit("mic-revoked", data);
-    io.emit("participants-list", Object.values(participants));
+    broadcastParticipants();
   });
 
   socket.on("disconnect", () => {
-    delete participants[socket.id];
-    delete pendingRequests[socket.id];
-    broadcastEvents();
-    io.emit("participants-list", Object.values(participants));
+    // Небольшая задержка перед удалением, чтобы дать шанс на переподключение (Refresh)
+    setTimeout(() => {
+      if (!io.sockets.sockets.get(socket.id)) {
+        delete participants[socket.id];
+        delete pendingRequests[socket.id];
+        io.emit("available-events", getActiveEvents());
+        broadcastParticipants();
+      }
+    }, 2000);
   });
 });
 
