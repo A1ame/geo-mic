@@ -33,25 +33,21 @@ setInterval(broadcastAll, 3000);
 
 io.on("connection", (socket) => {
   socket.on("join", (data) => {
-    // 1. Очистка дубликатов (удаляем старые сокеты с тем же именем и ролью)
+    // Чистим старые сессии с тем же именем, чтобы не было дублей
     Object.keys(participants).forEach(id => {
       if (participants[id].name === data.name && participants[id].role === data.role) {
-        if (disconnectTimers[id]) {
-          clearTimeout(disconnectTimers[id]);
-          delete disconnectTimers[id];
-        }
+        if (disconnectTimers[id]) clearTimeout(disconnectTimers[id]);
         delete participants[id];
       }
     });
 
-    // 2. Проверяем, был ли участник в эфире (для восстановления после F5)
-    const wasOnAir = Object.values(participants).some(p => p.name === data.name && p.isOnAir);
-
+    // Сохраняем участника
     participants[socket.id] = { 
       ...data, 
       socketId: socket.id, 
-      handRaised: data.handRaised || false,
-      isOnAir: data.isOnAir || wasOnAir 
+      // Если клиент пришел с флагом isOnAir (после F5), сохраняем его
+      isOnAir: data.isOnAir || false,
+      handRaised: data.handRaised || false
     };
     broadcastAll();
   });
@@ -78,20 +74,6 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("admin-exit", () => {
-    io.emit("event-ended", { adminSocketId: socket.id });
-    delete participants[socket.id];
-    broadcastAll();
-  });
-
-  socket.on("raise-hand", () => {
-    if (participants[socket.id]) {
-      participants[socket.id].handRaised = true;
-      participants[socket.id].isOnAir = false;
-      broadcastAll();
-    }
-  });
-
   socket.on("give-mic", (data) => {
     if (participants[data.socketId]) {
       participants[data.socketId].isOnAir = true;
@@ -109,16 +91,22 @@ io.on("connection", (socket) => {
     broadcastAll();
   });
 
+  socket.on("admin-exit", () => {
+    io.emit("event-ended", { adminSocketId: socket.id });
+    delete participants[socket.id];
+    broadcastAll();
+  });
+
   socket.on("disconnect", () => {
     const p = participants[socket.id];
     if (p && p.role === 'admin') {
       disconnectTimers[socket.id] = setTimeout(() => {
         io.emit("event-ended", { adminSocketId: socket.id });
         delete participants[socket.id];
-        delete disconnectTimers[socket.id];
         broadcastAll();
       }, 10000);
     } else {
+      // Для обычных участников задержка меньше, чтобы кнопка не висела долго
       delete participants[socket.id];
       broadcastAll();
     }
