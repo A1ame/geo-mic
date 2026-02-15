@@ -8,35 +8,26 @@ const PORT = process.env.PORT || 3000;
 const FRONTEND_URL = "https://geo-mic.vercel.app";
 
 const httpServer = http.createServer(app);
-
-let participants = {}; 
-let pendingRequests = {}; // Очередь: { [adminSocketId]: [{name, socketId}, ...] }
-
 const io = new Server(httpServer, {
   cors: { origin: [FRONTEND_URL, "http://localhost:5173"], methods: ["GET", "POST"], credentials: true },
   transports: ["polling", "websocket"]
 });
 
-const peerServer = ExpressPeerServer(httpServer, {
-  debug: true, path: "/", proxied: true, allow_discovery: true,
-  corsOptions: { origin: FRONTEND_URL, methods: ["GET", "POST"] }
-});
-
+const peerServer = ExpressPeerServer(httpServer, { debug: true, path: "/" });
 app.use("/peerjs", peerServer);
+
+let participants = {}; 
+let pendingRequests = {}; 
 
 const broadcastEvents = () => {
   const activeEvents = Object.values(participants)
     .filter(p => p.role === 'admin')
-    .map(p => ({ 
-      name: p.name, 
-      socketId: p.socketId, 
-      peerId: p.peerId, 
-      zone: p.zone 
-    }));
+    .map(p => ({ name: p.name, socketId: p.socketId, peerId: p.peerId }));
   io.emit("available-events", activeEvents);
 };
 
 io.on("connection", (socket) => {
+  // Исправление: отправляем список событий сразу при входе
   broadcastEvents();
 
   socket.on("join", (data) => {
@@ -45,18 +36,9 @@ io.on("connection", (socket) => {
     io.emit("participants-list", Object.values(participants));
   });
 
-  socket.on("set-zone", (zoneData) => {
-    if (participants[socket.id]) {
-      participants[socket.id].zone = zoneData;
-      broadcastEvents();
-    }
-  });
-
   socket.on("request-join", (data) => {
     const { adminSocketId, name } = data;
     if (!pendingRequests[adminSocketId]) pendingRequests[adminSocketId] = [];
-    
-    // Проверка на дубликат в очереди
     if (!pendingRequests[adminSocketId].find(r => r.socketId === socket.id)) {
       pendingRequests[adminSocketId].push({ name, socketId: socket.id });
     }
@@ -64,19 +46,11 @@ io.on("connection", (socket) => {
   });
 
   socket.on("approve-user", (userSocketId) => {
-    const adminId = socket.id;
-    if (pendingRequests[adminId]) {
-      pendingRequests[adminId] = pendingRequests[adminId].filter(r => r.socketId !== userSocketId);
-      io.to(adminId).emit("new-request", pendingRequests[adminId]);
+    if (pendingRequests[socket.id]) {
+      pendingRequests[socket.id] = pendingRequests[socket.id].filter(r => r.socketId !== userSocketId);
+      io.to(socket.id).emit("new-request", pendingRequests[socket.id]);
     }
-    io.to(userSocketId).emit("join-approved", { adminSocketId: adminId });
-  });
-
-  socket.on("raise-hand", () => {
-    if (participants[socket.id]) {
-      participants[socket.id].handRaised = true;
-      io.emit("participants-list", Object.values(participants));
-    }
+    io.to(userSocketId).emit("join-approved", { adminSocketId: socket.id });
   });
 
   socket.on("give-mic", (data) => {
@@ -95,14 +69,11 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    if (participants[socket.id]) {
-      delete participants[socket.id];
-      broadcastEvents();
-      io.emit("participants-list", Object.values(participants));
-    }
-    // Очистка очередей, если отключился админ
+    delete participants[socket.id];
     delete pendingRequests[socket.id];
+    broadcastEvents();
+    io.emit("participants-list", Object.values(participants));
   });
 });
 
-httpServer.listen(PORT, "0.0.0.0", () => { console.log("Server running..."); });
+httpServer.listen(PORT, "0.0.0.0");
