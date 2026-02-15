@@ -30,11 +30,12 @@ const broadcastAll = () => {
   io.emit("participants-list", Object.values(participants));
 };
 
-io.on("connection", (socket) => {
-  socket.emit("available-events", getActiveEvents());
+// МАЯК: Рассылаем события каждые 2 сек, чтобы новые участники видели их сразу
+setInterval(broadcastAll, 2000);
 
+io.on("connection", (socket) => {
   socket.on("join", (data) => {
-    // УДАЛЕНИЕ ДУБЛИКАТОВ: если зашел с тем же peerId, удаляем старый сокет
+    // Удаляем старые записи с тем же PeerID (защита от дублей при перезагрузке)
     Object.keys(participants).forEach(id => {
       if (participants[id].peerId === data.peerId) delete participants[id];
     });
@@ -44,11 +45,10 @@ io.on("connection", (socket) => {
   });
 
   socket.on("request-join", (data) => {
-    const { adminSocketId, name } = data;
+    const { adminSocketId, name, peerId } = data;
     if (!pendingRequests[adminSocketId]) pendingRequests[adminSocketId] = [];
-    // Добавляем в очередь, если еще не там
-    if (!pendingRequests[adminSocketId].find(r => r.socketId === socket.id)) {
-      pendingRequests[adminSocketId].push({ name, socketId: socket.id, peerId: data.peerId });
+    if (!pendingRequests[adminSocketId].find(r => r.peerId === peerId)) {
+      pendingRequests[adminSocketId].push({ name, socketId: socket.id, peerId });
     }
     io.to(adminSocketId).emit("new-request", pendingRequests[adminSocketId]);
   });
@@ -59,7 +59,6 @@ io.on("connection", (socket) => {
       pendingRequests[adminId] = pendingRequests[adminId].filter(r => r.socketId !== userSocketId);
       io.to(adminId).emit("new-request", pendingRequests[adminId]);
     }
-    // Сигнал участнику, что он принят
     io.to(userSocketId).emit("join-approved", { 
         adminName: participants[adminId]?.name,
         adminPeerId: participants[adminId]?.peerId 
@@ -67,7 +66,6 @@ io.on("connection", (socket) => {
   });
 
   socket.on("stop-event", () => {
-    // Когда админ жмет "Завершить", удаляем его из списка событий
     delete participants[socket.id];
     delete pendingRequests[socket.id];
     broadcastAll();
@@ -76,7 +74,7 @@ io.on("connection", (socket) => {
   socket.on("raise-hand", () => {
     if (participants[socket.id]) {
       participants[socket.id].handRaised = true;
-      io.emit("participants-list", Object.values(participants));
+      broadcastAll();
     }
   });
 
@@ -86,24 +84,23 @@ io.on("connection", (socket) => {
       participants[data.socketId].handRaised = false;
     }
     io.emit("mic-granted", data);
-    io.emit("participants-list", Object.values(participants));
+    broadcastAll();
   });
 
   socket.on("revoke-mic", (data) => {
     if (participants[data.socketId]) participants[data.socketId].isOnAir = false;
     io.emit("mic-revoked", data);
-    io.emit("participants-list", Object.values(participants));
+    broadcastAll();
   });
 
   socket.on("disconnect", () => {
-    // Задержка на случай перезагрузки страницы
     setTimeout(() => {
       if (!io.sockets.sockets.get(socket.id)) {
         delete participants[socket.id];
         delete pendingRequests[socket.id];
         broadcastAll();
       }
-    }, 1500);
+    }, 3000);
   });
 });
 
