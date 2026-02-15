@@ -28,9 +28,12 @@ const broadcastAll = () => {
   io.emit("participants-list", Object.values(participants));
 };
 
+// Рассылка списка событий каждые 3 секунды
+setInterval(broadcastAll, 3000);
+
 io.on("connection", (socket) => {
   socket.on("join", (data) => {
-    // Удаляем старые записи с тем же именем для предотвращения дублей при перезагрузке
+    // Удаляем старую сессию, если она была (при перезагрузке)
     Object.keys(participants).forEach(id => {
       if (participants[id].name === data.name) delete participants[id];
     });
@@ -42,6 +45,30 @@ io.on("connection", (socket) => {
       isOnAir: data.isOnAir || false 
     };
     broadcastAll();
+  });
+
+  socket.on("request-join", (data) => {
+    const { adminSocketId, name, peerId } = data;
+    if (!pendingRequests[adminSocketId]) pendingRequests[adminSocketId] = [];
+    
+    // Проверка, чтобы не дублировать заявки
+    if (!pendingRequests[adminSocketId].find(r => r.peerId === peerId)) {
+      pendingRequests[adminSocketId].push({ name, socketId: socket.id, peerId });
+    }
+    io.to(adminSocketId).emit("new-request", pendingRequests[adminSocketId]);
+  });
+
+  socket.on("approve-user", (userSocketId) => {
+    const adminId = socket.id;
+    if (pendingRequests[adminId]) {
+      pendingRequests[adminId] = pendingRequests[adminId].filter(r => r.socketId !== userSocketId);
+      io.to(adminId).emit("new-request", pendingRequests[adminId]);
+    }
+    io.to(userSocketId).emit("join-approved", { 
+        adminName: participants[adminId]?.name,
+        adminPeerId: participants[adminId]?.peerId,
+        adminSocketId: adminId
+    });
   });
 
   socket.on("raise-hand", () => {
@@ -68,28 +95,6 @@ io.on("connection", (socket) => {
     }
     io.emit("mic-revoked", data);
     broadcastAll();
-  });
-
-  socket.on("request-join", (data) => {
-    const { adminSocketId, name, peerId } = data;
-    if (!pendingRequests[adminSocketId]) pendingRequests[adminSocketId] = [];
-    if (!pendingRequests[adminSocketId].find(r => r.peerId === peerId)) {
-      pendingRequests[adminSocketId].push({ name, socketId: socket.id, peerId });
-    }
-    io.to(adminSocketId).emit("new-request", pendingRequests[adminSocketId]);
-  });
-
-  socket.on("approve-user", (userSocketId) => {
-    const adminId = socket.id;
-    if (pendingRequests[adminId]) {
-      pendingRequests[adminId] = pendingRequests[adminId].filter(r => r.socketId !== userSocketId);
-      io.to(adminId).emit("new-request", pendingRequests[adminId]);
-    }
-    io.to(userSocketId).emit("join-approved", { 
-        adminName: participants[adminId]?.name,
-        adminPeerId: participants[adminId]?.peerId,
-        adminSocketId: adminId
-    });
   });
 
   socket.on("disconnect", () => {
