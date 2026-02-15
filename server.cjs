@@ -9,23 +9,23 @@ const FRONTEND_URL = "https://geo-mic.vercel.app";
 
 const httpServer = http.createServer(app);
 
-// Настройка Socket.io с расширенным CORS
+// Хранилище активного события для синхронизации "запоздавших"
+let activeZone = null; 
+
 const io = new Server(httpServer, {
   cors: {
-    origin: [FRONTEND_URL, "http://localhost:5173"], // Разрешаем фронт и локалку
+    origin: [FRONTEND_URL, "http://localhost:5173"],
     methods: ["GET", "POST"],
     credentials: true
   },
   transports: ["polling", "websocket"]
 });
 
-// Настройка PeerServer
 const peerServer = ExpressPeerServer(httpServer, {
   debug: true,
   path: "/",
   proxied: true,
   allow_discovery: true,
-  // Добавляем CORS специфично для PeerJS (исправляет image_a61856.png)
   corsOptions: {
     origin: FRONTEND_URL,
     methods: ["GET", "POST"]
@@ -41,47 +41,55 @@ app.get("/", (req, res) => {
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
+  // СИНХРОНИЗАЦИЯ: Если кто-то зашел, а зона уже создана — сразу отправляем её
+  if (activeZone) {
+    socket.emit("zone-updated", activeZone);
+  }
+
   socket.on("join", (data) => {
     console.log(`User ${data.name} joined as ${data.role}`);
-    socket.join("main-room"); // Группируем пользователей
+    socket.join("main-room");
   });
 
-  // Админ устанавливает зону (центр и радиус)
+  // Админ устанавливает зону
   socket.on("set-zone", (zone) => {
-    console.log("Zone updated:", zone);
-    io.emit("zone-updated", zone); // Рассылаем всем участникам
-  });
-
-  // Участник передает свои координаты
-  socket.on("update-coords", (data) => {
-    // Рассылаем координаты всем, кроме отправителя
-    socket.broadcast.emit("participant-moved", { 
-      id: socket.id, 
-      ...data 
-    });
+    activeZone = zone; // ЗАПОМИНАЕМ ЗОНУ НА СЕРВЕРЕ
+    console.log("Zone updated and stored:", zone);
+    io.emit("zone-updated", zone); 
   });
 
   // Логика передачи микрофона
   socket.on("raise-hand", (data) => {
-    // Передаем админу инфо о том, что кто-то хочет говорить
+    // Добавляем флаг handRaised для админа
     io.emit("new-hand-raised", { 
       id: socket.id, 
       name: data.name, 
-      peerId: data.peerId 
+      peerId: data.peerId,
+      handRaised: true 
     });
   });
 
   socket.on("give-mic", (data) => {
-    // Сообщаем конкретному пользователю, что ему дали микрофон
     io.emit("mic-granted", { 
       targetPeerId: data.targetPeerId, 
       adminPeerId: data.adminPeerId 
     });
   });
 
+  // НОВОЕ: Команда на отключение микрофона (Revoke)
+  socket.on("revoke-mic", (data) => {
+    console.log("Revoking mic from:", data.targetPeerId);
+    io.emit("mic-revoked", { 
+      targetPeerId: data.targetPeerId 
+    });
+  });
+
   socket.on("disconnect", () => {
     console.log("User disconnected:", socket.id);
     io.emit("user-disconnected", socket.id);
+    
+    // Опционально: если нужно удалять зону, когда админ уходит
+    // activeZone = null; 
   });
 });
 

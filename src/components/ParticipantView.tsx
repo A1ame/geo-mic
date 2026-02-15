@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Mic, Radio, ShieldAlert } from 'lucide-react';
+import { Mic, Radio, ShieldAlert, MicOff } from 'lucide-react';
 
 const ParticipantView = ({ socket, peer, isInside, userName }: any) => {
   const [status, setStatus] = useState<'idle' | 'hand-raised' | 'on-air'>('idle');
+  const [isMuted, setIsMuted] = useState(false); // Локальный Mute
   const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
@@ -21,11 +22,14 @@ const ParticipantView = ({ socket, peer, isInside, userName }: any) => {
       }
     });
 
-    socket.on('mic-revoked', () => {
-      setStatus('idle');
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(t => t.stop());
-        streamRef.current = null;
+    socket.on('mic-revoked', ({ targetPeerId }: any) => {
+      if (peer.id === targetPeerId) {
+        setStatus('idle');
+        setIsMuted(false);
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(t => t.stop());
+          streamRef.current = null;
+        }
       }
     });
 
@@ -34,6 +38,14 @@ const ParticipantView = ({ socket, peer, isInside, userName }: any) => {
       socket.off('mic-revoked');
     };
   }, [socket, peer]);
+
+  const toggleMute = () => {
+    if (streamRef.current) {
+      const audioTrack = streamRef.current.getAudioTracks()[0];
+      audioTrack.enabled = !audioTrack.enabled;
+      setIsMuted(!audioTrack.enabled);
+    }
+  };
 
   if (!isInside) {
     return (
@@ -53,12 +65,12 @@ const ParticipantView = ({ socket, peer, isInside, userName }: any) => {
         onClick={() => {
           if (status === 'idle') {
             setStatus('hand-raised');
-            socket.emit('raise-hand', { name: userName, peerId: peer.id, socketId: socket.id });
+            socket.emit('raise-hand', { name: userName, peerId: peer.id });
           }
         }}
         disabled={status !== 'idle'}
         className={`w-64 h-64 rounded-full flex flex-col items-center justify-center transition-all duration-500 border-8 ${
-          status === 'on-air' ? 'bg-red-600 border-red-400 animate-pulse' : 
+          status === 'on-air' ? 'bg-red-600 border-red-400 animate-pulse shadow-[0_0_50px_#ef4444]' : 
           status === 'hand-raised' ? 'bg-slate-900 border-indigo-900 text-slate-600' : 
           'bg-indigo-600 border-indigo-400 active:scale-95 shadow-2xl shadow-indigo-500/20'
         }`}
@@ -69,7 +81,17 @@ const ParticipantView = ({ socket, peer, isInside, userName }: any) => {
         </span>
       </button>
 
-      <div className="mt-16">
+      {status === 'on-air' && (
+        <button 
+          onClick={toggleMute}
+          className={`mt-8 flex items-center gap-3 px-8 py-4 rounded-2xl font-black uppercase text-xs transition-all border ${isMuted ? 'bg-red-500 border-red-400 text-white' : 'bg-transparent border-white/20 text-white'}`}
+        >
+          {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
+          {isMuted ? 'Микрофон выкл.' : 'Выключить микрофон'}
+        </button>
+      )}
+
+      <div className="mt-12">
         <p className="text-slate-600 text-[10px] uppercase font-black tracking-[0.4em] mb-2">Speaker</p>
         <h3 className="text-4xl font-black text-white italic uppercase tracking-tighter">{userName}</h3>
       </div>
