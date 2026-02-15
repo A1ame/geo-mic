@@ -10,13 +10,16 @@ const AdminView = ({ socket, peer, adminName, onExit }: any) => {
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
-    navigator.geolocation.getCurrentPosition((pos) => setCoords([pos.coords.latitude, pos.coords.longitude]));
+    navigator.geolocation.getCurrentPosition((pos) => {
+      setCoords([pos.coords.latitude, pos.coords.longitude]);
+    });
 
     if (peer) {
       socket.emit('join', { role: 'admin', name: adminName, peerId: peer.id });
 
+      // АВТО-ПРИЕМ ЗВОНКА (Важно для возврата звука после F5 участника)
       peer.on('call', (call: any) => {
-        console.log("Входящий вызов...");
+        console.log("Получаем аудиопоток...");
         call.answer();
         call.on('stream', (stream: MediaStream) => {
           if (audioRef.current) {
@@ -53,8 +56,8 @@ const AdminView = ({ socket, peer, adminName, onExit }: any) => {
       
       {audioLocked && (
         <div className="fixed top-6 right-6 z-[9999]">
-          <button onClick={unlockAudio} className="bg-amber-500 hover:bg-amber-400 text-black px-6 py-3 rounded-2xl font-black text-xs animate-bounce flex items-center gap-3 shadow-2xl">
-            <Volume2 size={20}/> ВКЛЮЧИТЬ ЗВУК ПОСЛЕ ПЕРЕЗАГРУЗКИ
+          <button onClick={unlockAudio} className="bg-amber-500 text-black px-6 py-3 rounded-2xl font-black text-[10px] animate-bounce flex items-center gap-3 shadow-2xl">
+            <Volume2 size={16}/> НАЖМИТЕ ДЛЯ ВКЛЮЧЕНИЯ ЗВУКА
           </button>
         </div>
       )}
@@ -64,7 +67,7 @@ const AdminView = ({ socket, peer, adminName, onExit }: any) => {
           <h2 className="font-black italic flex items-center gap-2 text-indigo-500 uppercase text-[10px] tracking-widest">
             <Radio size={18}/> Geo-Mic Admin
           </h2>
-          <button onClick={() => { socket.emit('admin-exit'); onExit(); }} className="text-slate-500 hover:text-red-500 transition-colors">
+          <button onClick={() => { socket.emit('admin-exit'); onExit(); }} className="text-slate-500 hover:text-red-500">
             <LogOut size={18}/>
           </button>
         </div>
@@ -72,12 +75,12 @@ const AdminView = ({ socket, peer, adminName, onExit }: any) => {
         <div className="flex-grow overflow-y-auto p-4 space-y-6">
           {requests.length > 0 && (
             <div className="space-y-2">
-              <p className="text-[10px] font-black uppercase text-amber-400 px-2 tracking-widest">Новые запросы</p>
+              <p className="text-[10px] font-black uppercase text-amber-400 px-2 tracking-widest">Заявки</p>
               {requests.map(req => (
-                <div key={req.socketId} className="flex items-center justify-between bg-white/5 p-4 rounded-2xl border border-white/10">
+                <div key={req.socketId} className="flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/10">
                   <span className="text-sm font-bold truncate max-w-[120px]">{req.name}</span>
-                  <button onClick={() => socket.emit('approve-user', req.socketId)} className="p-2 bg-green-500 rounded-xl hover:bg-green-400 transition-all">
-                    <Check size={16}/>
+                  <button onClick={() => socket.emit('approve-user', req.socketId)} className="p-2 bg-green-500 rounded-lg">
+                    <Check size={14}/>
                   </button>
                 </div>
               ))}
@@ -85,17 +88,13 @@ const AdminView = ({ socket, peer, adminName, onExit }: any) => {
           )}
 
           <div className="space-y-2">
-            <p className="text-[10px] font-black uppercase text-slate-500 px-2 tracking-widest">Участники</p>
+            <p className="text-[10px] font-black uppercase text-slate-500 px-2 tracking-widest">В комнате</p>
             {participants.map(p => (
-              <div key={p.socketId} className={`p-4 rounded-2xl border transition-all duration-500 ${p.handRaised ? 'bg-indigo-600/20 border-indigo-500 animate-pulse' : 'bg-white/5 border-white/5'}`}>
+              <div key={p.socketId} className={`p-4 rounded-2xl border transition-all duration-300 ${p.handRaised ? 'bg-indigo-600/20 border-indigo-500 animate-pulse' : 'bg-white/5 border-white/5'}`}>
                 <div className="flex justify-between items-center">
                   <div className="flex flex-col">
                     <span className="font-bold text-sm truncate max-w-[110px]">{p.name}</span>
-                    {p.handRaised && (
-                      <span className="text-[9px] text-indigo-400 font-black flex items-center gap-1 mt-1">
-                        <Hand size={10} /> ПОДНЯЛ РУКУ
-                      </span>
-                    )}
+                    {p.handRaised && <span className="text-[9px] text-indigo-400 font-black flex items-center gap-1 mt-1"><Hand size={10}/> ПОДНЯЛ РУКУ</span>}
                   </div>
                   <button 
                     onClick={() => socket.emit(p.isOnAir ? 'revoke-mic' : 'give-mic', { socketId: p.socketId, adminPeerId: peer.id, targetPeerId: p.peerId })}

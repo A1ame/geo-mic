@@ -27,11 +27,11 @@ const ParticipantView = ({ socket, peer, userName, onExit }: any) => {
       streamRef.current = stream;
       stream.getAudioTracks()[0].enabled = !isMuted;
       
-      console.log("Стриминг на Peer ID:", adminId);
+      console.log("Звоним администратору...");
       peer.call(adminId, stream);
       setStatus('on-air');
     } catch (e) {
-      console.error("Ошибка микрофона:", e);
+      console.error("Микрофон недоступен:", e);
       setStatus('idle');
     }
   };
@@ -39,6 +39,7 @@ const ParticipantView = ({ socket, peer, userName, onExit }: any) => {
   useEffect(() => {
     socket.on('available-events', (admins: any[]) => {
       setAvailableAdmins(admins);
+      // Если админ обновился (новый Peer ID), а мы в эфире — переподключаемся
       if (isApproved && activeAdminData) {
         const current = admins.find(a => a.name === activeAdminData.adminName);
         if (current && current.peerId !== activeAdminData.adminPeerId) {
@@ -55,9 +56,11 @@ const ParticipantView = ({ socket, peer, userName, onExit }: any) => {
         role: 'user', 
         name: userName, 
         peerId: peer.id, 
-        isOnAir: status === 'on-air', 
-        handRaised: status === 'hand-raised' 
+        isOnAir: status === 'on-air',
+        handRaised: status === 'hand-raised'
       });
+
+      // САМОСТОЯТЕЛЬНЫЙ ЗВОНОК ПОСЛЕ ПЕРЕЗАГРУЗКИ (F5)
       if (status === 'on-air' && activeAdminData?.adminPeerId) {
         startStreaming(activeAdminData.adminPeerId);
       }
@@ -85,7 +88,7 @@ const ParticipantView = ({ socket, peer, userName, onExit }: any) => {
     });
 
     socket.on('event-ended', () => {
-      alert("Событие завершено");
+      alert("Эфир завершен");
       onExit();
     });
 
@@ -108,15 +111,15 @@ const ParticipantView = ({ socket, peer, userName, onExit }: any) => {
   if (!activeAdminData) {
     return (
       <div className="h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-white text-center">
-        <h2 className="text-xl font-black uppercase mb-8 text-indigo-500 tracking-widest">Активные события</h2>
+        <h2 className="text-xl font-black uppercase mb-8 text-indigo-500 tracking-widest">Выберите эфир</h2>
         <div className="w-full max-w-sm space-y-4">
           {availableAdmins.map(admin => (
-            <button key={admin.socketId} onClick={() => socket.emit('request-join', { adminSocketId: admin.socketId, name: userName, peerId: peer?.id })} className="w-full p-6 bg-white/5 border border-white/10 rounded-3xl flex justify-between items-center hover:bg-white/10 transition-all">
+            <button key={admin.socketId} onClick={() => socket.emit('request-join', { adminSocketId: admin.socketId, name: userName, peerId: peer?.id })} className="w-full p-6 bg-white/5 border border-white/10 rounded-3xl flex justify-between items-center hover:bg-white/10 transition-all group">
               <div className="text-left">
-                <p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Организатор</p>
+                <p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Ведущий</p>
                 <p className="font-bold text-lg">{admin.name}</p>
               </div>
-              <Users className="text-slate-600" />
+              <Users className="text-slate-600 group-hover:text-indigo-500" />
             </button>
           ))}
         </div>
@@ -124,16 +127,16 @@ const ParticipantView = ({ socket, peer, userName, onExit }: any) => {
     );
   }
 
-  if (!isApproved) return <div className="h-screen bg-slate-950 text-white flex items-center justify-center font-bold animate-pulse">ОЖИДАНИЕ ОДОБРЕНИЯ...</div>;
+  if (!isApproved) return <div className="h-screen bg-slate-950 text-white flex items-center justify-center font-black animate-pulse uppercase tracking-[0.2em]">Ожидание одобрения...</div>;
 
   return (
     <div className="h-screen bg-slate-950 flex flex-col items-center justify-between p-10 text-white">
       <div className="w-full max-w-md bg-white/5 p-4 rounded-3xl border border-white/10 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <ShieldCheck className="text-indigo-500"/>
-          <span className="font-bold text-sm tracking-widest">{activeAdminData?.adminName}</span>
+          <span className="font-bold text-sm">{activeAdminData?.adminName}</span>
         </div>
-        <button onClick={onExit} className="text-slate-500 hover:text-red-500 p-2 transition-colors"><LogOut size={20}/></button>
+        <button onClick={onExit} className="text-slate-500 hover:text-red-500 p-2"><LogOut size={20}/></button>
       </div>
 
       <div className="flex flex-col items-center">
@@ -152,12 +155,15 @@ const ParticipantView = ({ socket, peer, userName, onExit }: any) => {
         </button>
 
         {status === 'on-air' && (
-          <button onClick={() => { setIsMuted(!isMuted); if(streamRef.current) streamRef.current.getAudioTracks()[0].enabled = isMuted; }} className={`mt-10 px-8 py-4 rounded-2xl font-black uppercase text-[10px] flex items-center gap-3 border transition-all ${isMuted ? 'bg-red-500 border-red-400 shadow-lg' : 'bg-white/5 border-white/10'}`}>
-            {isMuted ? <MicOff size={16}/> : <Mic size={16}/>} {isMuted ? 'Звук выключен' : 'Выключить мик'}
+          <button 
+            onClick={() => { setIsMuted(!isMuted); if(streamRef.current) streamRef.current.getAudioTracks()[0].enabled = isMuted; }} 
+            className={`mt-10 px-8 py-4 rounded-2xl font-black uppercase text-[10px] flex items-center gap-3 border transition-all ${isMuted ? 'bg-red-500 border-red-400' : 'bg-white/5 border-white/10'}`}
+          >
+            {isMuted ? <MicOff size={16}/> : <Mic size={16}/>} {isMuted ? 'Включить звук' : 'Выключить звук'}
           </button>
         )}
       </div>
-      <div className="opacity-10 text-[10px] font-black uppercase tracking-[0.5em] select-none">Geo-Mic Connection</div>
+      <div className="opacity-10 text-[10px] font-black uppercase tracking-[0.5em] select-none">Geo-Mic Protocol</div>
     </div>
   );
 };
