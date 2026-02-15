@@ -18,9 +18,7 @@ app.use("/peerjs", peerServer);
 
 let participants = {}; 
 let pendingRequests = {}; 
-let disconnectTimers = {};
-// Хранилище состояний для восстановления после перезагрузки
-let persistentStates = {}; 
+let persistentStates = {}; // Хранилище состояний (кто в эфире, кто поднял руку)
 
 const broadcastAll = () => {
   const activeEvents = Object.values(participants)
@@ -35,26 +33,25 @@ setInterval(broadcastAll, 3000);
 
 io.on("connection", (socket) => {
   socket.on("join", (data) => {
-    // Проверяем, есть ли сохраненное состояние для этого имени
     const stateKey = `${data.role}_${data.name}`;
     const savedState = persistentStates[stateKey];
 
-    // Очищаем старые сокеты с таким же именем
+    // Удаляем старые записи этого пользователя
     Object.keys(participants).forEach(id => {
       if (participants[id].name === data.name && participants[id].role === data.role) {
         delete participants[id];
       }
     });
 
+    // Создаем объект участника, восстанавливая состояние из persistentStates
     participants[socket.id] = { 
       ...data, 
       socketId: socket.id, 
-      handRaised: data.handRaised || false,
-      // Если был в эфире до F5 - восстанавливаем статус
+      handRaised: savedState ? savedState.handRaised : (data.handRaised || false),
       isOnAir: savedState ? savedState.isOnAir : (data.isOnAir || false)
     };
 
-    // Если восстановили "в эфире", уведомляем всех о новом peerId участника
+    // Если юзер вернулся и он был в эфире, командуем начать стрим
     if (participants[socket.id].isOnAir) {
       io.emit("mic-granted", { 
         socketId: socket.id, 
@@ -64,6 +61,16 @@ io.on("connection", (socket) => {
     }
 
     broadcastAll();
+  });
+
+  socket.on("raise-hand", () => {
+    if (participants[socket.id]) {
+      participants[socket.id].handRaised = true;
+      participants[socket.id].isOnAir = false;
+      const key = `user_${participants[socket.id].name}`;
+      persistentStates[key] = { handRaised: true, isOnAir: false };
+      broadcastAll();
+    }
   });
 
   socket.on("request-join", (data) => {
@@ -92,9 +99,8 @@ io.on("connection", (socket) => {
     if (participants[data.socketId]) {
       participants[data.socketId].isOnAir = true;
       participants[data.socketId].handRaised = false;
-      // Сохраняем в долгосрочную память
       const key = `user_${participants[data.socketId].name}`;
-      persistentStates[key] = { isOnAir: true, adminPeerId: data.adminPeerId };
+      persistentStates[key] = { isOnAir: true, handRaised: false, adminPeerId: data.adminPeerId };
     }
     io.emit("mic-granted", data);
     broadcastAll();
@@ -120,22 +126,13 @@ io.on("connection", (socket) => {
     const p = participants[socket.id];
     if (p) {
       const stateKey = `${p.role}_${p.name}`;
-      // Если это админ - ждем 10 сек
-      if (p.role === 'admin') {
-        disconnectTimers[socket.id] = setTimeout(() => {
-          io.emit("event-ended", { adminSocketId: socket.id });
-          delete participants[socket.id];
-          broadcastAll();
-        }, 10000);
-      } else {
-        // Если это юзер - сохраняем его isOnAir на 5 сек, чтобы кнопка не мигала
-        if (p.isOnAir) {
-           persistentStates[stateKey] = { isOnAir: true };
-           setTimeout(() => { delete persistentStates[stateKey]; }, 5000);
-        }
-        delete participants[socket.id];
-        broadcastAll();
+      // Сохраняем статус на 15 секунд для возможности переподключения при F5
+      if (p.isOnAir || p.handRaised) {
+        persistentStates[stateKey] = { isOnAir: p.isOnAir, handRaised: p.handRaised, adminPeerId: p.adminPeerId };
+        setTimeout(() => { delete persistentStates[stateKey]; }, 15000);
       }
+      delete participants[socket.id];
+      broadcastAll();
     }
   });
 });
