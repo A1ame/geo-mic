@@ -9,10 +9,8 @@ const FRONTEND_URL = "https://geo-mic.vercel.app";
 
 const httpServer = http.createServer(app);
 
-let activeZone = null;
 let participants = {}; 
-let pendingRequests = {}; // Очередь на вход
-let adminInfo = { name: "Ожидание админа...", peerId: null, socketId: null };
+let pendingRequests = {}; // Очередь: { [adminSocketId]: [{name, socketId}, ...] }
 
 const io = new Server(httpServer, {
   cors: { origin: [FRONTEND_URL, "http://localhost:5173"], methods: ["GET", "POST"], credentials: true },
@@ -26,48 +24,53 @@ const peerServer = ExpressPeerServer(httpServer, {
 
 app.use("/peerjs", peerServer);
 
+const broadcastEvents = () => {
+  const activeEvents = Object.values(participants)
+    .filter(p => p.role === 'admin')
+    .map(p => ({ 
+      name: p.name, 
+      socketId: p.socketId, 
+      peerId: p.peerId, 
+      zone: p.zone 
+    }));
+  io.emit("available-events", activeEvents);
+};
+
 io.on("connection", (socket) => {
-  socket.emit("admin-updated", adminInfo);
-  if (activeZone) socket.emit("zone-updated", activeZone);
-
-  // Запрос на вступление
-  socket.on("request-join", (data) => {
-    pendingRequests[socket.id] = { ...data, socketId: socket.id };
-    if (adminInfo.socketId) {
-      io.to(adminInfo.socketId).emit("new-request", Object.values(pendingRequests));
-    }
-  });
-
-  // Админ одобряет участника
-  socket.on("approve-user", (socketId) => {
-    const userData = pendingRequests[socketId];
-    if (userData) {
-      participants[socketId] = { ...userData, handRaised: false, isOnAir: false };
-      delete pendingRequests[socketId];
-      io.to(socketId).emit("join-approved", { approved: true });
-      io.emit("participants-list", Object.values(participants));
-      if (adminInfo.socketId) io.to(adminInfo.socketId).emit("new-request", Object.values(pendingRequests));
-    }
-  });
+  broadcastEvents();
 
   socket.on("join", (data) => {
-    Object.keys(participants).forEach(id => {
-      if (participants[id].name === data.name) delete participants[id];
-    });
-
-    if (data.role === 'admin') {
-      adminInfo = { name: data.name, peerId: data.peerId, socketId: socket.id };
-      io.emit("admin-updated", adminInfo);
-    } else {
-        // Если юзер уже был одобрен (перезагрузка), восстанавливаем
-        participants[socket.id] = { ...data, socketId: socket.id, handRaised: false, isOnAir: false };
-    }
-    socket.join("main-room");
+    participants[socket.id] = { ...data, socketId: socket.id, handRaised: false, isOnAir: false };
+    broadcastEvents();
     io.emit("participants-list", Object.values(participants));
   });
 
-  socket.on("set-zone", (zone) => { activeZone = zone; io.emit("zone-updated", zone); });
-  socket.on("stop-event", () => { activeZone = null; io.emit("zone-updated", null); });
+  socket.on("set-zone", (zoneData) => {
+    if (participants[socket.id]) {
+      participants[socket.id].zone = zoneData;
+      broadcastEvents();
+    }
+  });
+
+  socket.on("request-join", (data) => {
+    const { adminSocketId, name } = data;
+    if (!pendingRequests[adminSocketId]) pendingRequests[adminSocketId] = [];
+    
+    // Проверка на дубликат в очереди
+    if (!pendingRequests[adminSocketId].find(r => r.socketId === socket.id)) {
+      pendingRequests[adminSocketId].push({ name, socketId: socket.id });
+    }
+    io.to(adminSocketId).emit("new-request", pendingRequests[adminSocketId]);
+  });
+
+  socket.on("approve-user", (userSocketId) => {
+    const adminId = socket.id;
+    if (pendingRequests[adminId]) {
+      pendingRequests[adminId] = pendingRequests[adminId].filter(r => r.socketId !== userSocketId);
+      io.to(adminId).emit("new-request", pendingRequests[adminId]);
+    }
+    io.to(userSocketId).emit("join-approved", { adminSocketId: adminId });
+  });
 
   socket.on("raise-hand", () => {
     if (participants[socket.id]) {
@@ -92,19 +95,14 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    if (pendingRequests[socket.id]) {
-        delete pendingRequests[socket.id];
-        if (adminInfo.socketId) io.to(adminInfo.socketId).emit("new-request", Object.values(pendingRequests));
-    }
     if (participants[socket.id]) {
-      if (participants[socket.id].role === 'admin') {
-        adminInfo.peerId = null;
-        io.emit("admin-updated", adminInfo);
-      }
       delete participants[socket.id];
+      broadcastEvents();
       io.emit("participants-list", Object.values(participants));
     }
+    // Очистка очередей, если отключился админ
+    delete pendingRequests[socket.id];
   });
 });
 
-httpServer.listen(PORT, "0.0.0.0", () => { console.log(`Server started on port ${PORT}`); });
+httpServer.listen(PORT, "0.0.0.0", () => { console.log("Server running..."); });
